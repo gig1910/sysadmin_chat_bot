@@ -1,0 +1,27 @@
+{
+  "name": "sysadmin_chat_bot",
+  "version": "0.2.0",
+  "description": "Chat bot for \"System Administrator\" chanel",
+  "main": "index.js",
+  "scripts": {
+    "run": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/gig1910/sysadmin_chat_bot.git"
+  },
+  "keywords": [
+    "telegramm",
+    "bot"
+  ],
+  "author": "KulikovAS aka GiG",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gig1910/sysadmin_chat_bot/issues"
+  },
+  "homepage": "https://github.com/gig1910/sysadmin_chat_bot#readme",
+  "dependencies": {
+    "telegraf": "^4.12.2"
+  }
+}
