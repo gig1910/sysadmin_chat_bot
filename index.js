@@ -21,46 +21,16 @@ bot.start((ctx) => {
 bot.help((ctx) => {
 });
 
-// Matches "/echo [whatever]"
-/*
- bot.command('setHelloText', async(ctx) => {
- console.log('onText');
- console.dir(ctx);
- 
- // 'msg' is the received Message from Telegram
- // 'match' is the result of executing the regexp above on the text content
- // of the message
- 
- const chatId = ctx?.chat?.id;
- const userId = ctx.from.id;
- const text   = ctx?.message; // the captured "whatever"
- 
- //Получаем администратороа чата
- const admins = (await bot.getChatAdministrators(chatId)) || [];
- const _b     = admins.find((el) => el?.user?.id === userId);
- if(_b && text){
- // Админ устанавливаем текст-приветствия и удаляем команду.
- helloText = text;
- let msg   = await bot.sendMessage(chatId, 'Ok');
- 
- //Через 5 секунд уладяем ответ на команду
- setTimeout(((msg) => () => bot.deleteMessage(msg.chat_id, msg.message_thread_id))(msg), 5000);
- }
- 
- return bot.deleteChatPhoto(msg.message_id);
- });
- */
-
 bot.command('getchatid', async(ctx) => {
 	const chatId = ctx?.chat?.id;
 	const userId = ctx.from.id;
 	
-	let msg   = await bot.sendMessage(chatId, `userID: ${userId}; chatID: ${chatId}`);
+	let msg = await ctx.sendMessage(chatId, `userID: ${userId}; chatID: ${chatId}`);
 	
 	//Через 5 секунд уладяем ответ на команду
 	setTimeout(((msg) => () => bot.deleteMessage(msg.chat_id, msg.message_thread_id))(msg), 5000);
 	
-	return bot.deleteChatPhoto(msg.message_id);
+	return msg;
 });
 
 bot.on('new_chat_members', (ctx) => {
@@ -68,7 +38,7 @@ bot.on('new_chat_members', (ctx) => {
 	console.dir(ctx);
 	
 	const new_user = ctx?.message?.new_chat_member;
-	const from = ctx?.message?.from;
+	const from     = ctx?.message?.from;
 	console.dir(new_user);
 	if(new_user){
 		// send a message to the chat acknowledging receipt of their message
@@ -88,11 +58,8 @@ console.log('Bot is launching.');
 // Enable graceful stop
 process.once('SIGINT', () => {
 	bot.stop('SIGINT');
-	imap_connection && imap_connection.end();
 });
 
 process.once('SIGTERM', () => {
-	clearInterval(_tId);
-	bot.stop('SIGTERM');
-	imap_connection && imap_connection.end();
+	bot.stop('SIGINT');
 });
