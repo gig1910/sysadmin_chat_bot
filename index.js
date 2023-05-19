@@ -25,7 +25,7 @@ bot.command('getchatid', async(ctx) => {
 	const chatId = ctx?.chat?.id;
 	const userId = ctx.from.id;
 	
-	let msg = await ctx.sendMessage(chatId, `userID: ${userId}; chatID: ${chatId}`);
+	let msg = await ctx.sendMessage(`userID: ${userId}; chatID: ${chatId}`);
 	
 	//Через 5 секунд уладяем ответ на команду
 	setTimeout(((msg) => () => bot.deleteMessage(msg.chat_id, msg.message_thread_id))(msg), 5000);
