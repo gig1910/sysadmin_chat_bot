@@ -28,7 +28,7 @@ bot.command('getchatid', async(ctx) => {
 	let msg = await ctx.sendMessage(`userID: ${userId}; chatID: ${chatId}`);
 	
 	//Через 5 секунд уладяем ответ на команду
-	setTimeout(((msg) => () => bot.deleteMessage(msg.chat_id, msg.message_thread_id))(msg), 5000);
+	setTimeout(((ctx, msg) => () => ctx.deleteMessage(msg.message_thread_id))(ctx, msg), 5000);
 	
 	return msg;
 });
@@ -43,9 +43,9 @@ bot.on('new_chat_members', (ctx) => {
 	if(new_user){
 		// send a message to the chat acknowledging receipt of their message
 		const _text = (helloText || '')
-			.replace(/%fName%/igm, new_user.first_name)
-			.replace(/%lName%/igm, new_user.last_name)
-			.replace(/%username%/igm, from.username);
+			.replace(/%fName%/igm, new_user.first_name || '')
+			.replace(/%lName%/igm, new_user.last_name || '')
+			.replace(/%username%/igm, from.username || '');
 		
 		ctx.reply(_text);
 	}
