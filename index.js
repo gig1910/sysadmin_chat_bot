@@ -3,7 +3,7 @@ const {Telegraf} = require('telegraf');
 console.log('Starting main');
 const bot = new Telegraf(process.env.TOKEN);
 
-let helloText = `Привет %fName% %lName% (@%username%).
+let helloText = `Привет, %fName% %lName% (@%username%).
 Добро пожаловать в чат "Системный Администратор"
 
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
