@@ -51,19 +51,26 @@ bot.on('new_chat_members', (ctx) => {
 	}
 });
 
+const spamTesters = [
+	/[aа][pр][б6]и[tт][pр][aа]ж.*?[kк][pр]и[пn][tт][aаoо0](?:.*?в[aа]лю[tт])?/igm,
+	/ТеСтОвОе СоОбЩеНиЕ нА сПаМ!!!/igm
+];
+
 bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	console.log('chat message');
 	// console.dir(ctx);
 	const message = ctx?.message || ctx?.update?.edited_message;
 	
-	if((/[aа][pр][б6]и[tт][pр][aа]ж.*?[kк][pр]и[пn][tт][aаoо0](?:.*?в[aа]лю[tт])?/igm).test(message?.text)){
-		ctx.deleteMessage(message?.message_id);
-		const mess = await ctx.reply(`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`);
-		setTimeout(((ctx, mess) => () => {
-			ctx.deleteMessage(mess?.message_id);
-		})(ctx, mess), 5000);
+	for(let re of spamTesters){
+		if(re?.test(message?.text)){
+			ctx.deleteMessage(message?.message_id);
+			const mess = await ctx.reply(`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`);
+			setTimeout(((ctx, mess) => () => {
+				ctx.deleteMessage(mess?.message_id);
+			})(ctx, mess), 20000);
+			break;
+		}
 	}
-	
 });
 
 console.log('Launch bot...');
