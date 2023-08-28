@@ -35,10 +35,10 @@ bot.command('getchatid', async(ctx) => {
 
 bot.on('new_chat_members', (ctx) => {
 	console.log('new_chat_members');
-	console.dir(ctx);
+	// console.dir(ctx);
 	
 	const new_user = ctx?.message?.new_chat_member;
-	const from     = ctx?.message?.from;
+	const from = ctx?.message?.from;
 	console.dir(new_user);
 	if(new_user){
 		// send a message to the chat acknowledging receipt of their message
@@ -49,6 +49,21 @@ bot.on('new_chat_members', (ctx) => {
 		
 		ctx.reply(_text);
 	}
+});
+
+bot.on(['text', 'message', 'edited_message'], async(ctx) => {
+	console.log('chat message');
+	// console.dir(ctx);
+	const message = ctx?.message || ctx?.update?.edited_message;
+	
+	if((/[aа][pр][б6]и[tт][pр][aа]ж.*?[kк][pр]и[пn][tт][aаoо0](?:.*?в[aа]лю[tт])?/igm).test(message?.text)){
+		ctx.deleteMessage(message?.message_id);
+		const mess = await ctx.reply(`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`);
+		setTimeout(((ctx, mess) => () => {
+			ctx.deleteMessage(mess?.message_id);
+		})(ctx, mess), 5000);
+	}
+	
 });
 
 console.log('Launch bot...');
