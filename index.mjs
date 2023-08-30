@@ -1,4 +1,5 @@
-const {Telegraf} = require('telegraf');
+import {Telegraf} from 'telegraf';
+import {generateRegExp} from './common/regexp.mjs';
 
 console.log('Starting main');
 const bot = new Telegraf(process.env.TOKEN);
@@ -52,8 +53,16 @@ bot.on('new_chat_members', (ctx) => {
 });
 
 const spamTesters = [
-	/[aа][pр][б6]и[tт][pр][aа]ж.*?[kк][pр]и[пn][tт][aаoо0](?:.*?в[aа]лю[tт])?/igm,
-	/ТеСтОвОе СоОбЩеНиЕ нА сПаМ!!!/igm
+	'арбитраж крипт валют',
+	'став спорт',
+	'зараб крипт',
+	'работ день доход',
+	'работ час доход',
+	'работ доход день',
+	'работ доход час',
+	'работ инвестиц',
+	'инвестиц вложен',
+	'ТеСтОвОе СоОбЩеНиЕ нА сПаМ!!!'
 ];
 
 bot.on(['text', 'message', 'edited_message'], async(ctx) => {
@@ -62,7 +71,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	const message = ctx?.message || ctx?.update?.edited_message;
 	
 	for(let re of spamTesters){
-		if(re?.test(message?.text)){
+		if(generateRegExp(re)?.test(message?.text)){
 			ctx.deleteMessage(message?.message_id);
 			const mess = await ctx.reply(`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`);
 			setTimeout(((ctx, mess) => () => {
