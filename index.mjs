@@ -72,6 +72,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	
 	for(let re of spam_rules || []){
 		if(generateRegExp(re)?.test(message?.text)){
+			console.log(`found spam message: ${message?.text}`);
 			ctx.deleteMessage(message?.message_id);
 			return sendAutoRemoveMsg(ctx,
 				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`,
