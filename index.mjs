@@ -1,13 +1,31 @@
 import {Telegraf} from 'telegraf';
 import {generateRegExp} from './common/regexp.mjs';
 
-console.log('Starting main');
+import {spam_rules} from './spam_rules/index.mjs';
+
+console.info('Starting main');
 const bot = new Telegraf(process.env.TOKEN);
 
 let helloText = `Привет, %fName% %lName% (@%username%).
 Добро пожаловать в чат "Системный Администратор"
 
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
+
+/**
+ * @param ctx
+ * @param message
+ * @param timeout
+ * @return {Promise<*>}
+ */
+const sendAutoRemoveMsg = async(ctx, message, timeout) => {
+	let msg = await ctx.sendMessage(message);
+	
+	setTimeout(((ctx, msg) => () => ctx.deleteMessage(msg?.message_id))(ctx, msg), timeout);
+	
+	return msg;
+};
+
+//***************************************
 
 bot.onerror = err => {
 	console.warn('bot - ERROR');
@@ -26,12 +44,7 @@ bot.command('getchatid', async(ctx) => {
 	const chatId = ctx?.chat?.id;
 	const userId = ctx.from.id;
 	
-	let msg = await ctx.sendMessage(`userID: ${userId}; chatID: ${chatId}`);
-	
-	//Через 5 секунд уладяем ответ на команду
-	setTimeout(((ctx, msg) => () => ctx.deleteMessage(msg.message_thread_id))(ctx, msg), 5000);
-	
-	return msg;
+	return sendAutoRemoveMsg(ctx, `userID: ${userId}; chatID: ${chatId}`, 5000);
 });
 
 bot.on('new_chat_members', (ctx) => {
@@ -52,47 +65,25 @@ bot.on('new_chat_members', (ctx) => {
 	}
 });
 
-const spamTesters = [
-	'арбитраж крипт валют',
-	'став спорт',
-	'зараб крипт',
-	'работ день доход',
-	'работ час доход',
-	'работ доход день',
-	'работ доход час',
-	'работ инвестиц',
-	'инвестиц вложен',
-	'заработ колебан курс',
-	'заработ личк',
-	'ТеСтОвОе СоОбЩеНиЕ нА сПаМ!!!'
-];
-
 bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	console.log('chat message');
 	// console.dir(ctx);
 	const message = ctx?.message || ctx?.update?.edited_message;
 	
-	for(let re of spamTesters){
+	for(let re of spam_rules || []){
 		if(generateRegExp(re)?.test(message?.text)){
 			ctx.deleteMessage(message?.message_id);
-			const mess = await ctx.reply(`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`);
-			setTimeout(((ctx, mess) => () => {
-				ctx.deleteMessage(mess?.message_id);
-			})(ctx, mess), 20000);
-			break;
+			return sendAutoRemoveMsg(ctx,
+				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`,
+				20000);
 		}
 	}
 });
 
-console.log('Launch bot...');
-bot.launch();
-console.log('Bot is launching.');
+console.info('Launch bot...');
+bot.launch().then();
+console.info('Bot is launching.');
 
 // Enable graceful stop
-process.once('SIGINT', () => {
-	bot.stop('SIGINT');
-});
-
-process.once('SIGTERM', () => {
-	bot.stop('SIGINT');
-});
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGINT'));
