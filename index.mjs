@@ -52,7 +52,7 @@ bot.command('question', async(ctx) => {
 	const userId = ctx.from.id;
 	
 	return ctx.sendMessage(`*Как правильно задавать вопрос\\.*
-/question
+
 1\\. Укажите именно суть вопроса\\.
     "*_У меня не работает_*” \\- это не вопрос\\. *__Это утверждение__*\\.
 
