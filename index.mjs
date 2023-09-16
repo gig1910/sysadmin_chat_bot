@@ -92,7 +92,7 @@ bot.on('new_chat_members', (ctx) => {
 			.replace(/%lName%/igm, new_user.last_name || '')
 			.replace(/%username%/igm, from.username || '');
 		
-		ctx.reply(_text);
+		return sendAutoRemoveMsg(ctx, _text, 3600000); // Час
 	}
 });
 
