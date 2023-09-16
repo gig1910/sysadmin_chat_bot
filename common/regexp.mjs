@@ -5,8 +5,7 @@ const letters = ['aа', 'b6в', 'cс', 'd', 'eеё', 'f', 'g', 'hн', 'i', 'j', 
  * @param {String} words
  */
 export function generateRegExp(words){
-	let str = '';
-	words = words.split('').map(el => {
+	const _words = (words || '').split('').map(el => {
 		switch(el){
 			case ' ':
 				return '.*?';
@@ -16,7 +15,7 @@ export function generateRegExp(words){
 				return l ? `[${l}]` : el;
 		}
 	});
-	return new RegExp(words.join(''), 'igm');
+	return new RegExp(_words.join(''), 'igm');
 }
 
 export default {generateRegExp};

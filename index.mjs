@@ -12,9 +12,9 @@ let helloText = `Привет, %fName% %lName% (@%username%).
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
 
 /**
- * @param ctx
- * @param message
- * @param timeout
+ * @param {Object}  ctx
+ * @param {String}  message
+ * @param {Number} [timeout=1000]
  * @return {Promise<*>}
  */
 const sendAutoRemoveMsg = async(ctx, message, timeout) => {
@@ -26,7 +26,7 @@ const sendAutoRemoveMsg = async(ctx, message, timeout) => {
 		} catch(err){
 			console.warn(err.message || err);
 		}
-	})(ctx, msg), timeout);
+	})(ctx, msg), timeout || 1000);
 	
 	return msg;
 };
@@ -39,11 +39,11 @@ bot.onerror = err => {
 };
 
 bot.start((ctx) => {
-	console.dir(ctx);
-	return ctx.reply('Welcome');
+	return sendAutoRemoveMsg(ctx, 'Welcome');
 });
 
 bot.help((ctx) => {
+	return sendAutoRemoveMsg(ctx, 'Bot for telergamm SysAdminChat');
 });
 
 bot.command('getchatid', async(ctx) => {
@@ -54,9 +54,6 @@ bot.command('getchatid', async(ctx) => {
 });
 
 bot.command('question', async(ctx) => {
-	const chatId = ctx?.chat?.id;
-	const userId = ctx.from.id;
-	
 	return ctx.sendMessage(`*Как правильно задавать вопрос\\.*
 
 1\\. Укажите именно суть вопроса\\.
@@ -86,7 +83,6 @@ bot.command('question', async(ctx) => {
 
 bot.on('new_chat_members', (ctx) => {
 	console.log('new_chat_members');
-	// console.dir(ctx);
 	
 	ctx.deleteMessage(ctx?.message?.id);
 	
@@ -106,7 +102,6 @@ bot.on('new_chat_members', (ctx) => {
 
 bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	console.log('chat message');
-	// console.dir(ctx);
 	const message = ctx?.message || ctx?.update?.edited_message;
 	
 	for(let re of spam_rules || []){
@@ -114,7 +109,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 			console.log(`found spam message: ${message?.text}`);
 			ctx.deleteMessage(message?.message_id);
 			return sendAutoRemoveMsg(ctx,
-				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предуплеждение. В нашем канале нет места спаму.`,
+				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предупреждение. В нашем канале нет места спаму.`,
 				20000);
 		}
 	}
