@@ -20,7 +20,13 @@ let helloText = `Привет, %fName% %lName% (@%username%).
 const sendAutoRemoveMsg = async(ctx, message, timeout) => {
 	let msg = await ctx.sendMessage(message);
 	
-	setTimeout(((ctx, msg) => () => ctx.deleteMessage(msg?.message_id))(ctx, msg), timeout);
+	setTimeout(((ctx, msg) => () => {
+		try{
+			ctx.deleteMessage(msg?.message_id);
+		} catch(err){
+			console.warn(err.message || err);
+		}
+	})(ctx, msg), timeout);
 	
 	return msg;
 };
@@ -81,6 +87,8 @@ bot.command('question', async(ctx) => {
 bot.on('new_chat_members', (ctx) => {
 	console.log('new_chat_members');
 	// console.dir(ctx);
+	
+	ctx.deleteMessage(ctx?.message?.id);
 	
 	const new_user = ctx?.message?.new_chat_member;
 	const from = ctx?.message?.from;
