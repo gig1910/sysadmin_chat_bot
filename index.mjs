@@ -120,7 +120,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предупреждение. В нашем канале нет места спаму.`,
 				20000);
 		}else{
-			console.log(`found not spam message: ${message?.text}`);
+			console.log(`found not spam message: ${message?.text}\n${generateRegExp(re).toString()}`);
 		}
 	}
 });
