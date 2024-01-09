@@ -11,6 +11,8 @@ let helloText = `Привет, %fName% %lName% (@%username%).
 
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
 
+const bannedUserID = {};
+
 /**
  * @param {Object}  ctx
  * @param {String}  message
@@ -108,6 +110,12 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 		if(generateRegExp(re)?.test(message?.text)){
 			console.log(`found spam message: ${message?.text}`);
 			ctx.deleteMessage(message?.message_id);
+			if(bannedUserID[message?.from?.id]){
+				delete bannedUserID[message?.from?.id];
+				
+			}else{
+				bannedUserID[message?.from?.id] = true;
+			}
 			return sendAutoRemoveMsg(ctx,
 				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предупреждение. В нашем канале нет места спаму.`,
 				20000);
