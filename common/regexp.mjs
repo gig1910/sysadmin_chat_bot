@@ -8,7 +8,7 @@ export function generateRegExp(words){
 	const _words = (words || '').split('').map(el => {
 		switch(el){
 			case ' ':
-				return '.*?\n?';
+				return '.*?\n?.*?';
 			
 			default:
 				const l = letters.find(l => l.includes(el));
