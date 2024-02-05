@@ -29,5 +29,6 @@ export const spam_rules = [
 	'aктyaлeн нaбop в кoмaндy нoвыx yчacтникoв кoмaнды',
 	'coвмecтнoгo зapaбoткa взaимoвыгoдныx ycлoвияx',
 	'виpтyaльны oнлaйн aктив',
+	'Нaбираeм кoмaнд людeй взaимoвыгoдн пaртнёрст хoрoший дoxoд',
 	'ТеСтОвОе СоОбЩеНиЕ нА сПаМ!!!',
 ];
