@@ -112,8 +112,11 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 			ctx.deleteMessage(message?.message_id);
 
 			if(bannedUserID[message?.from?.id]){
-				await bot.telegram.banChatMember(message?.chat?.id, message.from.id);
-				console.log(`User ${message.from.id} banned in ${message?.chat?.id}`);
+				if(message?.chat?.type !== 'private'){
+					await bot.telegram.banChatMember(message?.chat?.id, message.from.id, (message?.date + 3600));
+					console.log(`User ${message.from.id} banned in ${message?.chat?.id}`);
+				}
+
 				delete bannedUserID[message?.from?.id];
 				
 			}else{
