@@ -124,7 +124,7 @@ bot.command('unblock_user', async(ctx) => {
 
 bot.command('test', async(ctx) => {
 	const message = ctx?.message || ctx?.update?.edited_message;
-	deleteMessage(ctx, message?.message_id).then();
+	// deleteMessage(ctx, message?.message_id).then();
 	
 	for(let re of spam_rules || []){
 		if(generateRegExp(re)?.test(message?.text)){
@@ -137,6 +137,9 @@ bot.command('test', async(ctx) => {
 				20000);
 		}
 	}
+	return sendAutoRemoveMsg(ctx,
+		`Не попадает под правила распознавания спама`,
+		20000);
 });
 
 bot.on('new_chat_members', (ctx) => {
