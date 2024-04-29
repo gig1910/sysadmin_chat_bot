@@ -122,6 +122,23 @@ bot.command('unblock_user', async(ctx) => {
 	}
 });
 
+bot.command('test', async(ctx) => {
+	const message = ctx?.message || ctx?.update?.edited_message;
+	deleteMessage(ctx, message?.message_id).then();
+	
+	for(let re of spam_rules || []){
+		if(generateRegExp(re)?.test(message?.text)){
+			console.log(`found spam message: ${message?.text}`);
+			
+			deleteMessage(ctx, message?.message_id).then();
+			
+			return sendAutoRemoveMsg(ctx,
+				`Распознан спам по правилу: ${re}`,
+				20000);
+		}
+	}
+});
+
 bot.on('new_chat_members', (ctx) => {
 	console.log('new_chat_members');
 	
