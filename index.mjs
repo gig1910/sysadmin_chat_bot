@@ -13,6 +13,14 @@ let helloText = `Привет, %fName% %lName% (@%username%).
 
 const bannedUserID = {};
 
+const deleteMessage = async(ctx, msg_id) => {
+	try{
+		return await ctx.deleteMessage(ctx, msg_id);
+	}catch(err){
+		console.warn(err);
+	}
+};
+
 /**
  * @param {Object}  ctx
  * @param {String}  message
@@ -20,11 +28,11 @@ const bannedUserID = {};
  * @return {Promise<*>}
  */
 const sendAutoRemoveMsg = async(ctx, message, timeout) => {
-	let msg = await ctx.sendMessage(message);
+	let msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2'});
 	
 	setTimeout(((ctx, msg) => () => {
 		try{
-			ctx.deleteMessage(msg?.message_id);
+			deleteMessage(ctx, msg?.message_id);
 		} catch(err){
 			console.warn(err.message || err);
 		}
@@ -51,6 +59,9 @@ bot.help((ctx) => {
 bot.command('getchatid', async(ctx) => {
 	const chatId = ctx?.chat?.id;
 	const userId = ctx.from.id;
+	const message = ctx?.message || ctx?.update?.edited_message;
+	
+	deleteMessage(ctx, message?.message_id).then();
 	
 	return sendAutoRemoveMsg(ctx, `userID: ${userId}; chatID: ${chatId}`, 5000);
 });
@@ -83,10 +94,38 @@ bot.command('question', async(ctx) => {
 	);
 });
 
+bot.command('unblock_user', async(ctx) => {
+	const message = ctx?.message || ctx?.update?.edited_message;
+	deleteMessage(ctx, message?.message_id).then();
+	
+	//Проверяем права отправившего команду пользователя
+	const userInfo = await bot.telegram.getChatMember(message?.chat?.id, message?.from?.id);
+	if(['owner', 'administrator'].includes(userInfo?.status)){
+		const arr = (/^\/unblock_user\s+(-?\d+)$/igm).exec(message?.text);
+		if(arr?.length > 1){
+			const userID = parseInt(arr[1]);
+			if(userID > 0){
+				bot.telegram.unbanChatMember(userID, message?.chat?.id);
+				
+			}else{
+				return sendAutoRemoveMsg(ctx, `*Неверный формат команды\\.*
+Правильный формат \`unblock_user userID\``);
+			}
+			
+		}else{
+			return sendAutoRemoveMsg(ctx, `*Неверный формат команды\\.*
+Правильный формат \`unblock_user userID\``);
+		}
+		
+	}else{
+		return sendAutoRemoveMsg(ctx, 'У Вас нет прав на выполнение данный команды\\.');
+	}
+});
+
 bot.on('new_chat_members', (ctx) => {
 	console.log('new_chat_members');
 	
-	ctx.deleteMessage(ctx?.message?.id);
+	deleteMessage(ctx, ctx?.message?.id).then();
 	
 	const new_user = ctx?.message?.new_chat_member;
 	const from = ctx?.message?.from;
@@ -109,7 +148,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	for(let re of spam_rules || []){
 		if(generateRegExp(re)?.test(message?.text)){
 			console.log(`found spam message: ${message?.text}`);
-			ctx.deleteMessage(message?.message_id);
+			deleteMessage(ctx, message?.message_id).then();
 
 			if(bannedUserID[message?.from?.id]){
 				if(message?.chat?.type !== 'private'){
@@ -124,15 +163,20 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 			}
 			
 			return sendAutoRemoveMsg(ctx,
-				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предупреждение. В нашем канале нет места спаму.`,
+				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предупреждение\\. В нашем канале нет места спаму\\.`,
 				20000);
 		}
 	}
 });
 
-console.info('Launch bot...');
-bot.launch().then();
-console.info('Bot is launching.');
+try{
+	console.info('Launch bot...');
+	bot.launch().then();
+	console.info('Bot is launching.');
+
+}catch(err){
+	console.error(err);
+}
 
 // Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
