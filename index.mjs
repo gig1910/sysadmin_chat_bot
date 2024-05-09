@@ -124,11 +124,14 @@ bot.command('unblock_user', async(ctx) => {
 
 bot.command('test', async(ctx) => {
 	const message = ctx?.message || ctx?.update?.edited_message;
+	const arr = (/\/test (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
+	const test_message = arr ? arr[1] : message?.text;
 	// deleteMessage(ctx, message?.message_id).then();
 	
 	for(let re of spam_rules || []){
-		if(generateRegExp(re)?.test(message?.text)){
-			console.log(`found spam message: ${message?.text}`);
+		const _re = generateRegExp(re);
+		if(_re?.test(test_message)){
+			console.log(`found spam message: ${test_message}`);
 			
 			deleteMessage(ctx, message?.message_id).then();
 			
