@@ -15,7 +15,7 @@ const bannedUserID = {};
 
 const deleteMessage = async(ctx, msg_id) => {
 	try{
-		return await ctx.deleteMessage(ctx, msg_id);
+		return await ctx.deleteMessage(msg_id);
 	}catch(err){
 		console.warn(err);
 	}
