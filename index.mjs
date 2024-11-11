@@ -25,9 +25,10 @@ const deleteMessage = async(ctx, msg_id) => {
  * @param {Object}  ctx
  * @param {String}  message
  * @param {Number} [timeout=1000]
+ * @param {Boolean} [isMarkdown=false]
  * @return {Promise<*>}
  */
-const sendAutoRemoveMsg = async(ctx, message, timeout) => {
+const sendAutoRemoveMsg = async(ctx, message, timeout, isMarkdown) => {
 	let msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2'});
 	
 	setTimeout(((ctx, msg) => () => {
@@ -186,7 +187,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 			}
 			
 			return sendAutoRemoveMsg(ctx,
-				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} ${message?.from?.username ? `\\(@${message.from.username}\\) ` : ''}\\-\\- Первое и последнее предупреждение\\. В нашем канале нет места спаму\\.`,
+				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} ${message?.from?.username ? `\\(\\@${message.from.username}\\) ` : ''}\\-\\- Первое и последнее предупреждение\\. В нашем канале нет места спаму\\.`,
 				20000);
 		}
 	}
