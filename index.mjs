@@ -6,7 +6,7 @@ import {spam_rules} from './spam_rules/index.mjs';
 console.info('Starting main');
 const bot = new Telegraf(process.env.TOKEN);
 
-let helloText = `Привет, %fName% %lName% (@%username%).
+let helloText = `Привет, %fName% %lName% \(@%username%\).
 Добро пожаловать в чат "Системный Администратор"
 
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
@@ -186,7 +186,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 			}
 			
 			return sendAutoRemoveMsg(ctx,
-				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} (${message?.from?.username ? `@${message.from.username}` : ''}) - Первое и последнее предупреждение\\. В нашем канале нет места спаму\\.`,
+				`${message?.from?.first_name || ''} ${message?.from.last_name || ''} \(${message?.from?.username ? `@${message.from.username}` : ''}\) - Первое и последнее предупреждение\\. В нашем канале нет места спаму\\.`,
 				20000);
 		}
 	}
