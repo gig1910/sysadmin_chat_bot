@@ -29,7 +29,12 @@ const deleteMessage = async(ctx, msg_id) => {
  * @return {Promise<*>}
  */
 const sendAutoRemoveMsg = async(ctx, message, timeout, isMarkdown) => {
-	let msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2'});
+	let msg;
+	if(isMarkdown){
+		msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2'});
+	}else{
+		msg = await ctx.sendMessage(message);
+	}
 	
 	setTimeout(((ctx, msg) => () => {
 		try{
@@ -110,16 +115,16 @@ bot.command('unblock_user', async(ctx) => {
 				
 			}else{
 				return sendAutoRemoveMsg(ctx, `*Неверный формат команды\\.*
-Правильный формат \`unblock_user userID\``);
+Правильный формат \`unblock_user userID\``, 2000, true);
 			}
 			
 		}else{
 			return sendAutoRemoveMsg(ctx, `*Неверный формат команды\\.*
-Правильный формат \`unblock_user userID\``);
+Правильный формат \`unblock_user userID\``, 2000,  true);
 		}
 		
 	}else{
-		return sendAutoRemoveMsg(ctx, 'У Вас нет прав на выполнение данный команды\\.');
+		return sendAutoRemoveMsg(ctx, 'У Вас нет прав на выполнение данный команды.');
 	}
 });
 
@@ -187,7 +192,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 			}
 			
 			return sendAutoRemoveMsg(ctx,
-				`${message?.from?.first_name || ''} ${message?.from.last_name || ''}${message?.from?.username ? ` \\(\\@${message.from.username}\\)` : ''} — Первое и последнее предупреждение\\. В нашем канале нет места спаму\\.`,
+				`${message?.from?.first_name || ''} ${message?.from.last_name || ''}${message?.from?.username ? ` (@${message.from.username})` : ''} — Первое и последнее предупреждение. В нашем канале нет места спаму.`,
 				20000);
 		}
 	}
