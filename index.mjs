@@ -17,6 +17,8 @@ let helloText = `Привет, %fName% %lName% \(@%username%\).
 
 const bannedUserID = {};
 
+const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${user?.last_name ? (user?.first_name ? ' ' : '') + user?.last_name : ''}`;
+
 /**
  * Удаление сообщения
  * @param {Object} ctx
@@ -254,13 +256,13 @@ bot.action('apply_rules', async(ctx) => {
 	
 	const bNewUser = await getUserStateFromChat(chat, user);
 	if(bNewUser === false){
-		sendAutoRemoveMsg(ctx, `${user?.first_name} ${user?.last_name}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
+		sendAutoRemoveMsg(ctx, `${makeName(user)}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
 		return false;
 
 	}else{
 		// Сбрасываем статус нового участника
 		await addUser2Chat2DB(chat, user, false);
-		sendAutoRemoveMsg(ctx, `Спасибо, ${user?.first_name} ${user?.last_name}. Теперь Вы полноправный член группы.`, false, 20000).then();
+		sendAutoRemoveMsg(ctx, `Спасибо, ${makeName(user)}. Теперь Вы полноправный член группы.`, false, 20000).then();
 		return true;
 	}
 });
@@ -323,11 +325,11 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	if(bNewUser !== false){
 		await deleteMessage(ctx, message?.message_id);
 		return sentQuestion(ctx,
-			`${user?.first_name} ${user?.last_name}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
+			`${makeName(user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
 			[
 				Markup.button.callback('✅ Принимаю правила', 'apply_rules', false)
 			],
-			5000
+			20000
 		);
 	}
 	
