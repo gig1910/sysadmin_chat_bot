@@ -3,6 +3,8 @@ import {Markup, Telegraf} from 'telegraf';
 import {generateRegExp} from './common/regexp.mjs';
 import {spam_rules} from './spam_rules/index.mjs';
 
+import * as db from './common/db.mjs';
+
 console.info('Starting main');
 const bot = new Telegraf(process.env.TOKEN);
 
@@ -67,7 +69,7 @@ const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
 
 const newUsers = {};
 
-const sentQuestion = async (ctx, question, buttons, timeout) => {
+const sentQuestion = async(ctx, question, buttons, timeout) => {
 	const user = ctx?.message?.from;
 	
 	const msg = await ctx.reply(
@@ -81,6 +83,61 @@ const sentQuestion = async (ctx, question, buttons, timeout) => {
 	
 	return msg;
 };
+
+//***************************************
+
+const addChat2DB = async chat => db.query(`
+                INSERT INTO sysadmin_chat_bot.chats(id, type, title, invite_link, permissions, join_to_send_messages, max_reaction_count, raw)
+                VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
+                ON CONFLICT(id) DO UPDATE SET type=excluded.type,
+                                              title=excluded.title,
+                                              invite_link=excluded.invite_link,
+                                              permissions=excluded.permissions,
+                                              join_to_send_messages=excluded.join_to_send_messages,
+                                              max_reaction_count=excluded.max_reaction_count,
+                                              raw=excluded.raw;`,
+	[chat?.id, chat?.type, chat?.title, chat?.invite_link, JSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, JSON.stringify(chat)]
+);
+
+const addUser2DB = async user => db.query(`
+            INSERT INTO sysadmin_chat_bot.users(id, username, first_name, last_name, type, active_usernames, bio, has_private_forwards, max_reaction_count, accent_color_id, raw)
+            VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::TEXT, $5::TEXT, STRING_TO_ARRAY($6::TEXT, ',')::TEXT[], $7::TEXT, $8::BOOL, $9::INT, $10::INT, $11::JSONB)
+            ON CONFLICT(id) DO UPDATE SET username=excluded.username,
+                                          first_name=excluded.first_name,
+                                          last_name=excluded.last_name,
+                                          type=excluded.type,
+                                          active_usernames=excluded.active_usernames,
+                                          bio=excluded.bio,
+                                          has_private_forwards=excluded.has_private_forwards,
+                                          max_reaction_count=excluded.max_reaction_count,
+                                          accent_color_id=excluded.accent_color_id,
+                                          raw=excluded.raw;`,
+	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, user?.accent_color_id, JSON.stringify(user)]
+);
+
+const addUser2Chat2DB = async (chat, user, bNew) => db.query(`
+            INSERT INTO sysadmin_chat_bot.users_chats(user_id, chat_id, new_user)
+            VALUES ($1::BIGINT, $2::BIGINT, $3::BOOL)
+            ON CONFLICT(user_id, chat_id) DO UPDATE SET new_user=excluded.new_user;`,
+	[user?.id, chat?.id, bNew]
+);
+
+const getUserStateFromChat = async (chat, user) => {
+	const res = await db.query(
+		`SELECT NEW_USER
+         FROM sysadmin_chat_bot.users_chats
+         WHERE user_id = $1::BIGINT
+           AND chat_id = $2::BIGINT;`,
+		[user?.id, chat?.id]
+	);
+	return res?.rows[0]?.new_user;
+};
+
+const addMessage2DB = async (ctx, chat, user, message) => db.query(`
+                INSERT INTO sysadmin_chat_bot.messages (message_id, chat_id, user_id, message, ctx)
+                VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, $5::JSONB)
+                ON CONFLICT DO NOTHING;`,
+	[message?.message_id, chat?.id, user?.id, JSON.stringify(message), JSON.stringify(ctx)]);
 
 //***************************************
 
@@ -139,7 +196,7 @@ bot.command('unblock_user', async(ctx) => {
 	const message = ctx?.message || ctx?.update?.edited_message;
 	deleteMessage(ctx, message?.message_id).then();
 	
-	//Проверяем права отправившего команду пользователя
+	//Проверяем права отправившего команду участника
 	const userInfo = await bot.telegram.getChatMember(message?.chat?.id, message?.from?.id);
 	if(['owner', 'administrator'].includes(userInfo?.status)){
 		const arr = (/^\/unblock_user\s+(-?\d+)$/igm).exec(message?.text);
@@ -189,53 +246,79 @@ bot.command('test', async(ctx) => {
 });
 
 bot.action('apply_rules', async(ctx) => {
-	const user = ctx?.update?.callback_query?.from;
-	const userID = user?.id;
+	const message = ctx?.update?.callback_query?.message;
+	const chat = message.chat;
+	const user = ctx?.update?.callback_query.from;
 	
-	if(newUsers[userID]){
-		delete newUsers[userID];
-		sendAutoRemoveMsg(ctx, `Спасибо, ${user?.first_name} ${user?.last_name}. Теперь Вы полноправный член группы.`, false, 10000).then();
-		return true;
-		
-	}else{
+	const bNewUser = await getUserStateFromChat(chat, user);
+	if(bNewUser === false){
 		sendAutoRemoveMsg(ctx, `${user?.first_name} ${user?.last_name}, Вам не требовалось отвечать на этот вопрос.`, false, 10000).then();
 		return false;
+
+	}else{
+		// Сбрасываем статус нового участника
+		await addUser2Chat2DB(chat, user, false);
+		sendAutoRemoveMsg(ctx, `Спасибо, ${user?.first_name} ${user?.last_name}. Теперь Вы полноправный член группы.`, false, 10000).then();
+		return true;
 	}
 });
 
-bot.on('new_chat_members', (ctx) => {
+bot.on('new_chat_members', async (ctx) => {
 	console.log('new_chat_members');
+	
+	const message = ctx?.message || ctx?.update?.edited_message;
+	const chat = message.chat;
+	const user = ctx?.message?.new_chat_member;
+	
+	// const chat = await ctx.telegram.getChat(chatID);
+	await addChat2DB(chat);
+	
+	// Проверяем наличие участника в БД
+	await addUser2DB(user);
+	
+	// Проверяем участника в связке, если нет - добавляем как нового
+	await addUser2Chat2DB(chat, user, true);
+	
+	// Сохраняем сообщение
+	addMessage2DB(ctx, chat, user, message).then();
 	
 	deleteMessage(ctx, ctx?.message?.id).then();
 	
-	const new_user = ctx?.message?.new_chat_member;
-	const from = ctx?.message?.from;
-	const userID = ctx?.message?.from?.id;
+	const _text = (helloText || '')
+		.replace(/%fName%/igm, user.first_name || '')
+		.replace(/%lName%/igm, user.last_name || '')
+		.replace(/%username%/igm, user.username || '');
 	
-	console.dir(new_user);
-	if(new_user){
-		newUsers[new_user.id] = true;
-		// send a message to the chat acknowledging receipt of their message
-		const _text = (helloText || '')
-			.replace(/%fName%/igm, new_user.first_name || '')
-			.replace(/%lName%/igm, new_user.last_name || '')
-			.replace(/%username%/igm, from.username || '');
-		
-		return sentQuestion(ctx, _text,
-			[
-				Markup.button.callback('✅ Принимаю правила', 'apply_rules', false)
-			],
-			3600000);
-	}
+	return sentQuestion(ctx, _text,
+		[
+			Markup.button.callback('✅ Принимаю правила', 'apply_rules', false)
+		],
+		3600000);
 });
 
 bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	console.log('chat message');
 	const message = ctx?.message || ctx?.update?.edited_message;
+	const chat = message.chat;
 	const user = message?.from;
-	const userID = user?.id;
 	
-	if(newUsers[userID]){
+	// const chat = await ctx.telegram.getChat(chatID);
+	await addChat2DB(chat);
+	
+	// Проверяем наличие участника в БД
+	await addUser2DB(user);
+	
+	//Получаем значение участника для чата
+	const bNewUser = await getUserStateFromChat(chat, user);
+	if(typeof(bNewUser) !== 'boolean'){
+		// добавляем участника в чат как нового
+		await addUser2Chat2DB(chat, user, true);
+	}
+	
+	// Сохраняем сообщение
+	addMessage2DB(ctx, chat, user, message).then();
+	
+	if(bNewUser !== false){
 		await deleteMessage(ctx, message?.message_id);
 		return sentQuestion(ctx,
 			`${user?.first_name} ${user?.last_name}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
@@ -271,15 +354,33 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	}
 });
 
-try{
-	console.info('Launch bot...');
-	bot.launch().then();
-	console.info('Bot is launching.');
-	
-}catch(err){
-	console.error(err);
-}
+(async() => {
+	try{
+		console.info('Opening DB...');
+		await db.open_db();
+		console.info('DB is opened.');
+		console.info('Testing connect to DB...');
+		await db.query('SELECT 1;');
+		console.info('Connect to DB was been tested.');
+		
+		
+		console.info('Launch bot...');
+		bot.launch().then();
+		console.info('Bot is launching.');
+		
+	}catch(err){
+		console.error(err);
+		bot.stop('SIGINT');
+		return db.close_db();
+	}
+})();
 
 // Enable graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGINT'));
+process.once('SIGINT', () => {
+	bot.stop('SIGINT');
+	return db.close_db();
+});
+process.once('SIGTERM', () => {
+	bot.stop('SIGINT');
+	return db.close_db();
+});
