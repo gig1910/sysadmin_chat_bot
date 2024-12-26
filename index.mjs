@@ -5,6 +5,8 @@ import {spam_rules} from './spam_rules/index.mjs';
 
 import * as db from './common/db.mjs';
 
+
+
 console.info('Starting main');
 const bot = new Telegraf(process.env.TOKEN);
 
@@ -252,13 +254,13 @@ bot.action('apply_rules', async(ctx) => {
 	
 	const bNewUser = await getUserStateFromChat(chat, user);
 	if(bNewUser === false){
-		sendAutoRemoveMsg(ctx, `${user?.first_name} ${user?.last_name}, Вам не требовалось отвечать на этот вопрос.`, false, 10000).then();
+		sendAutoRemoveMsg(ctx, `${user?.first_name} ${user?.last_name}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
 		return false;
 
 	}else{
 		// Сбрасываем статус нового участника
 		await addUser2Chat2DB(chat, user, false);
-		sendAutoRemoveMsg(ctx, `Спасибо, ${user?.first_name} ${user?.last_name}. Теперь Вы полноправный член группы.`, false, 10000).then();
+		sendAutoRemoveMsg(ctx, `Спасибо, ${user?.first_name} ${user?.last_name}. Теперь Вы полноправный член группы.`, false, 20000).then();
 		return true;
 	}
 });
