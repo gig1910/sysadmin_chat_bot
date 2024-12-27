@@ -147,6 +147,12 @@ const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
 	[user?.id, chat?.id, bNew]
 );
 
+const removeUserFromChat2DB = async(chat, user) => db.query(`
+            DELETE FROM sysadmin_chat_bot.users_chats
+            WHERE user_id=$1::BIGINT AND chat_id=$2::BIGINT`,
+	[user?.id, chat?.id]
+);
+
 const getUserStateFromChat = async(chat, user) => {
 	const res = await db.query(
 		`SELECT NEW_USER
@@ -204,13 +210,16 @@ bot.help((ctx) => {
 });
 
 bot.command('getchatid', async(ctx) => {
-	const chatId = ctx?.chat?.id;
-	const userId = ctx.from.id;
+	const chat = ctx?.chat;
+	const user = ctx.from;
 	const message = ctx?.message || ctx?.update?.edited_message;
+
+	// Сохраняем сообщение
+	addMessage2DB(ctx, chat, user, message).then();
 	
 	deleteMessage(ctx, message?.message_id).then();
 	
-	return sendAutoRemoveMsg(ctx, `userID: ${userId}; chatID: ${chatId}`, false, 5000);
+	return sendAutoRemoveMsg(ctx, `userID: ${user?.id}; chatID: ${chat?.id}`, false, 5000);
 });
 
 bot.command('question', async(ctx) => {
@@ -241,39 +250,17 @@ bot.command('question', async(ctx) => {
 	);
 });
 
-bot.command('unblock_user', async(ctx) => {
-	const message = ctx?.message || ctx?.update?.edited_message;
-	deleteMessage(ctx, message?.message_id).then();
-	
-	//Проверяем права отправившего команду участника
-	const userInfo = await bot.telegram.getChatMember(message?.chat?.id, message?.from?.id);
-	if(['owner', 'administrator'].includes(userInfo?.status)){
-		const arr = (/^\/unblock_user\s+(-?\d+)$/igm).exec(message?.text);
-		if(arr?.length > 1){
-			const userID = parseInt(arr[1]);
-			if(userID > 0){
-				await bot.telegram.unbanChatMember(userID, message?.chat?.id);
-				
-			}else{
-				return sendAutoRemoveMsg(ctx, `*Неверный формат команды\\.*
-Правильный формат \`unblock_user userID\``, false, 2000);
-			}
-			
-		}else{
-			return sendAutoRemoveMsg(ctx, `*Неверный формат команды\\.*
-Правильный формат \`unblock_user userID\``, false, 2000);
-		}
-		
-	}else{
-		return sendAutoRemoveMsg(ctx, 'У Вас нет прав на выполнение данный команды.', false, 5000);
-	}
-});
-
 bot.command('test', async(ctx) => {
+	const chat = ctx?.chat;
+	const user = ctx.from;
 	const message = ctx?.message || ctx?.update?.edited_message;
+
 	const arr = (/\/test (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
 	const test_message = arr ? arr[1] : message?.text;
 	// deleteMessage(ctx, message?.message_id).then();
+
+	// Сохраняем сообщение
+	addMessage2DB(ctx, chat, user, message).then();
 	
 	for(let re of spam_rules || []){
 		const _re = generateRegExp(re);
@@ -299,6 +286,9 @@ bot.action('apply_rules', async(ctx) => {
 	const chat = message.chat;
 	const user = ctx?.update?.callback_query.from;
 	
+	// Сохраняем сообщение
+	addMessage2DB(ctx, chat, user, message).then();
+	
 	const bNewUser = await getUserStateFromChat(chat, user);
 	if(bNewUser === false){
 		sendAutoRemoveMsg(ctx, `${makeName(user)}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
@@ -313,49 +303,84 @@ bot.action('apply_rules', async(ctx) => {
 });
 
 bot.on('new_chat_members', async(ctx) => {
+	const arr = [];
 	console.log('new_chat_members');
 	
-	const message = ctx?.message || ctx?.update?.edited_message;
-	const chat = message.chat;
-	const user = ctx?.message?.new_chat_member;
-	
-	// const chat = await ctx.telegram.getChat(chatID);
-	await addChat2DB(chat);
-	
-	// Проверяем наличие участника в БД
-	await addUser2DB(user);
-	
-	// Проверяем участника в связке, если нет - добавляем как нового
-	await addUser2Chat2DB(chat, user, true);
-	
-	// Сохраняем сообщение
-	addMessage2DB(ctx, chat, user, message).then();
-	
-	deleteMessage(ctx, ctx?.message?.id).then();
-	
-	const _text = (HelloText || '')
-		.replace(/%fName%/igm, user.first_name || '')
-		.replace(/%lName%/igm, user.last_name || '')
-		.replace(/%username%/igm, user.username || '');
-	
-	const _buttons = [];
-	let bAccept = false;
-	for(let i = 0; i < 3; i++){
-		const bTrue = Math.round(1) >= 0.5;
-		if(bTrue && !bAccept){
-			_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-			bAccept = true;
-		}else if(i === 2 && !bAccept){
-			_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-			bAccept = true;
-		}else{
-			_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+	const func = async (user) => {
+		const message = ctx?.message;
+		const chat = message.chat;
+		
+		// const chat = await ctx.telegram.getChat(chatID);
+		await addChat2DB(chat);
+		
+		// Проверяем наличие участника в БД
+		await addUser2DB(user);
+		
+		// Проверяем участника в связке, если нет - добавляем как нового
+		await addUser2Chat2DB(chat, user, true);
+		
+		// Сохраняем сообщение
+		addMessage2DB(ctx, chat, user, message).then();
+		
+		deleteMessage(ctx, ctx?.message?.id).then();
+		
+		const _text = (HelloText || '')
+			.replace(/%fName%/igm, user.first_name || '')
+			.replace(/%lName%/igm, user.last_name || '')
+			.replace(/%username%/igm, user.username || '');
+		
+		const _buttons = [];
+		let bAccept = false;
+		for(let i = 0; i < 3; i++){
+			const bTrue = Math.round(1) >= 0.5;
+			if(bTrue && !bAccept){
+				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+				bAccept = true;
+			}else if(i === 2 && !bAccept){
+				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+				bAccept = true;
+			}else{
+				_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+			}
 		}
+		
+		return sentQuestion(ctx, _text,
+			_buttons,
+			3600000);
+	};
+	
+	for(let i=0; i<ctx?.message?.new_chat_members; i++){
+		const user = ctx?.message?.new_chat_members[i];
+		arr.push(func(user));
 	}
 	
-	return sentQuestion(ctx, _text,
-		_buttons,
-		3600000);
+	return Promise.all(arr);
+});
+
+bot.on('left_chat_member', async(ctx) => {
+	const arr = [];
+	console.log('left_chat_member');
+	
+	const func = async (user) => {
+		const message = ctx?.message;
+		const chat = message.chat;
+		
+		await addChat2DB(chat);
+		await addUser2DB(user);
+		await removeUserFromChat2DB(chat, user);
+		
+		// Сохраняем сообщение
+		addMessage2DB(ctx, chat, user, message).then();
+		
+		deleteMessage(ctx, ctx?.message?.id).then();
+	};
+	
+	for(let i=0; i<ctx?.message?.left_chat_member	; i++){
+		const user = ctx?.message?.left_chat_member	[i];
+		arr.push(func(user));
+	}
+	
+	return Promise.all(arr);
 });
 
 bot.on(['text', 'message', 'edited_message'], async(ctx) => {
