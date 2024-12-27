@@ -6,16 +6,41 @@ import {spam_rules} from './spam_rules/index.mjs';
 import * as db from './common/db.mjs';
 
 
-
 console.info('Starting main');
 const bot = new Telegraf(process.env.TOKEN);
 
-let helloText = `Привет, %fName% %lName% \(@%username%\).
+const HelloText = `Привет, %fName% %lName% \(@%username%\).
 Добро пожаловать в чат "Системный Администратор"
 
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
 
 const bannedUserID = {};
+
+const SmileForButtons = [
+	{pict: '🐸', value: 'Лягушка'},
+	{pict: '🐵', value: 'Обезьянка'},
+	{pict: '🐥', value: 'Цыплёнок'},
+	{pict: '🪿', value: 'Гусь'},
+	{pict: '🦉️', value: 'Сова'},
+	{pict: '🦖', value: 'Динозавр'},
+	{pict: '🦑', value: 'Кальмар'},
+	{pict: '🦐', value: 'Креветка'},
+	{pict: '🐖', value: 'Поросёнок'},
+	{pict: '🐈', value: 'Котёнок'},
+	{pict: '🍄', value: 'Гриб'},
+	{pict: '‍🐚', value: 'Ракушка'},
+	{pict: '🌹', value: 'Цветок'},
+	{pict: '🌲', value: 'Ёлка'},
+	{pict: '🌵', value: 'Кактус'},
+	{pict: '🌈', value: 'Радуга'},
+	{pict: '☀️', value: 'Солнце'},
+	{pict: '🦀', value: 'Краб'},
+	{pict: '🦈', value: 'Акула'},
+	{pict: '🐝☂', value: 'Пчела'},
+	{pict: '💧', value: 'Капля'},
+	{pict: '❄️', value: 'Снежинка'},
+	{pict: '️☂️', value: 'Зонт'},
+];
 
 const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${user?.last_name ? (user?.first_name ? ' ' : '') + user?.last_name : ''}`;
 
@@ -71,11 +96,7 @@ const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
 	return msg;
 };
 
-const newUsers = {};
-
 const sentQuestion = async(ctx, question, buttons, timeout) => {
-	const user = ctx?.message?.from;
-	
 	const msg = await ctx.reply(
 		question,
 		Markup.inlineKeyboard([buttons]).oneTime().resize()
@@ -91,15 +112,15 @@ const sentQuestion = async(ctx, question, buttons, timeout) => {
 //***************************************
 
 const addChat2DB = async chat => db.query(`
-                INSERT INTO sysadmin_chat_bot.chats(id, type, title, invite_link, permissions, join_to_send_messages, max_reaction_count, raw)
-                VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
-                ON CONFLICT(id) DO UPDATE SET type=excluded.type,
-                                              title=excluded.title,
-                                              invite_link=excluded.invite_link,
-                                              permissions=excluded.permissions,
-                                              join_to_send_messages=excluded.join_to_send_messages,
-                                              max_reaction_count=excluded.max_reaction_count,
-                                              raw=excluded.raw;`,
+            INSERT INTO sysadmin_chat_bot.chats(id, type, title, invite_link, permissions, join_to_send_messages, max_reaction_count, raw)
+            VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
+            ON CONFLICT(id) DO UPDATE SET type=excluded.type,
+                                          title=excluded.title,
+                                          invite_link=excluded.invite_link,
+                                          permissions=excluded.permissions,
+                                          join_to_send_messages=excluded.join_to_send_messages,
+                                          max_reaction_count=excluded.max_reaction_count,
+                                          raw=excluded.raw;`,
 	[chat?.id, chat?.type, chat?.title, chat?.invite_link, JSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, JSON.stringify(chat)]
 );
 
@@ -119,14 +140,14 @@ const addUser2DB = async user => db.query(`
 	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, user?.accent_color_id, JSON.stringify(user)]
 );
 
-const addUser2Chat2DB = async (chat, user, bNew) => db.query(`
+const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
             INSERT INTO sysadmin_chat_bot.users_chats(user_id, chat_id, new_user)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BOOL)
             ON CONFLICT(user_id, chat_id) DO UPDATE SET new_user=excluded.new_user;`,
 	[user?.id, chat?.id, bNew]
 );
 
-const getUserStateFromChat = async (chat, user) => {
+const getUserStateFromChat = async(chat, user) => {
 	const res = await db.query(
 		`SELECT NEW_USER
          FROM sysadmin_chat_bot.users_chats
@@ -137,11 +158,35 @@ const getUserStateFromChat = async (chat, user) => {
 	return res?.rows[0]?.new_user;
 };
 
-const addMessage2DB = async (ctx, chat, user, message) => db.query(`
-                INSERT INTO sysadmin_chat_bot.messages (message_id, chat_id, user_id, message, ctx)
-                VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, $5::JSONB)
-                ON CONFLICT DO NOTHING;`,
+const addMessage2DB = async(ctx, chat, user, message) => db.query(`
+            INSERT INTO sysadmin_chat_bot.messages (message_id, chat_id, user_id, message, ctx)
+            VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, $5::JSONB)
+            ON CONFLICT DO NOTHING;`,
 	[message?.message_id, chat?.id, user?.id, JSON.stringify(message), JSON.stringify(ctx)]);
+
+const getChatUserQuestion = async(chat, user) => {
+	const res = await db.query(
+		`SELECT answer
+         FROM sysadmin_chat_bot.chats_users_test_question
+         WHERE user_id = $1::BIGINT
+           AND chat_id = $2::BIGINT;`,
+		[user?.id, chat?.id]
+	);
+	
+	if(res?.rows[0]?.answer){
+		return res?.rows[0]?.answer;
+		
+	}else{
+		const res = await db.query(
+			`SELECT answer
+             FROM sysadmin_chat_bot.chats_users_test_question
+             WHERE user_id = $1::BIGINT
+               AND chat_id = $2::BIGINT;`,
+			[user?.id, chat?.id]
+		);
+	}
+	
+};
 
 //***************************************
 
@@ -207,7 +252,7 @@ bot.command('unblock_user', async(ctx) => {
 		if(arr?.length > 1){
 			const userID = parseInt(arr[1]);
 			if(userID > 0){
-				bot.telegram.unbanChatMember(userID, message?.chat?.id);
+				await bot.telegram.unbanChatMember(userID, message?.chat?.id);
 				
 			}else{
 				return sendAutoRemoveMsg(ctx, `*Неверный формат команды\\.*
@@ -258,7 +303,7 @@ bot.action('apply_rules', async(ctx) => {
 	if(bNewUser === false){
 		sendAutoRemoveMsg(ctx, `${makeName(user)}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
 		return false;
-
+		
 	}else{
 		// Сбрасываем статус нового участника
 		await addUser2Chat2DB(chat, user, false);
@@ -267,7 +312,7 @@ bot.action('apply_rules', async(ctx) => {
 	}
 });
 
-bot.on('new_chat_members', async (ctx) => {
+bot.on('new_chat_members', async(ctx) => {
 	console.log('new_chat_members');
 	
 	const message = ctx?.message || ctx?.update?.edited_message;
@@ -288,15 +333,28 @@ bot.on('new_chat_members', async (ctx) => {
 	
 	deleteMessage(ctx, ctx?.message?.id).then();
 	
-	const _text = (helloText || '')
+	const _text = (HelloText || '')
 		.replace(/%fName%/igm, user.first_name || '')
 		.replace(/%lName%/igm, user.last_name || '')
 		.replace(/%username%/igm, user.username || '');
 	
+	const _buttons = [];
+	let bAccept = false;
+	for(let i = 0; i < 3; i++){
+		const bTrue = Math.round(1) >= 0.5;
+		if(bTrue && !bAccept){
+			_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+			bAccept = true;
+		}else if(i === 2 && !bAccept){
+			_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+			bAccept = true;
+		}else{
+			_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+		}
+	}
+	
 	return sentQuestion(ctx, _text,
-		[
-			Markup.button.callback('✅ Принимаю правила', 'apply_rules', false)
-		],
+		_buttons,
 		3600000);
 });
 
@@ -314,7 +372,7 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	
 	//Получаем значение участника для чата
 	const bNewUser = await getUserStateFromChat(chat, user);
-	if(typeof(bNewUser) !== 'boolean'){
+	if(typeof (bNewUser) !== 'boolean'){
 		// добавляем участника в чат как нового
 		await addUser2Chat2DB(chat, user, true);
 	}
@@ -324,11 +382,26 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	
 	if(bNewUser !== false){
 		await deleteMessage(ctx, message?.message_id);
+
+		const _buttons = [];
+		let bAccept = false;
+		for(let i = 0; i < 3; i++){
+			const bTrue = Math.round(1) >= 0.5;
+			if(bTrue && !bAccept){
+				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+				bAccept = true;
+			}else if(i === 2 && !bAccept){
+				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+				bAccept = true;
+			}else{
+				_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+			}
+		}
+		
 		return sentQuestion(ctx,
-			`${makeName(user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
-			[
-				Markup.button.callback('✅ Принимаю правила', 'apply_rules', false)
-			],
+			`${makeName(
+				user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
+			_buttons,
 			20000
 		);
 	}
