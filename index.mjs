@@ -4,9 +4,10 @@ import {generateRegExp} from './common/regexp.mjs';
 import {spam_rules} from './spam_rules/index.mjs';
 
 import * as db from './common/db.mjs';
+import * as logger from './common/logger.mjs';
 
 
-console.info('Starting main');
+logger.info('Starting main').then();
 const bot = new Telegraf(process.env.TOKEN);
 
 const HelloText = `Привет, %fName% %lName% \(@%username%\).
@@ -57,7 +58,7 @@ const deleteMessage = async(ctx, msg_id) => {
 		return await ctx.deleteMessage(msg_id);
 		
 	}catch(err){
-		console.warn(err);
+		logger.warn(err).then();
 	}
 };
 
@@ -79,7 +80,7 @@ const sendMessage = async(ctx, message, isMarkdown) => {
 		return msg;
 		
 	}catch(err){
-		console.warn(err);
+		logger.warn(err).then();
 	}
 };
 
@@ -264,8 +265,8 @@ const getChatUserQuestion = async(chat, user) => {
 //***************************************
 
 bot.onerror = err => {
-	console.warn('bot - ERROR');
-	console.dir(err);
+	logger.warn('bot - ERROR').then();
+	logger.dir(err).then();
 };
 
 bot.start((ctx) => {
@@ -332,7 +333,7 @@ bot.command('test', async(ctx) => {
 	for(let re of spam_rules || []){
 		const _re = generateRegExp(re);
 		if(_re?.test(test_message)){
-			console.log(`found spam message: ${test_message}`);
+			logger.log(`found spam message: ${test_message}`).then();
 			
 			deleteMessage(ctx, message?.message_id).then();
 			
@@ -371,7 +372,7 @@ bot.action('apply_rules', async(ctx) => {
 
 bot.on('new_chat_members', async(ctx) => {
 	const arr = [];
-	console.log('new_chat_members');
+	logger.log('new_chat_members').then();
 	
 	const func = async (user) => {
 		const message = ctx?.message;
@@ -424,7 +425,7 @@ bot.on('new_chat_members', async(ctx) => {
 
 bot.on('left_chat_member', async(ctx) => {
 	const arr = [];
-	console.log('left_chat_member');
+	logger.log('left_chat_member').then();
 	
 	const func = async (user) => {
 		const message = ctx?.message;
@@ -449,7 +450,7 @@ bot.on('left_chat_member', async(ctx) => {
 });
 
 bot.on(['text', 'message', 'edited_message'], async(ctx) => {
-	console.log('chat message');
+	logger.log('chat message').then();
 	const message = ctx?.message || ctx?.update?.edited_message;
 	const chat = message.chat;
 	const user = message?.from;
@@ -498,13 +499,13 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	
 	for(let re of spam_rules || []){
 		if(generateRegExp(re)?.test(message?.text)){
-			console.log(`found spam message: ${message?.text}`);
+			logger.log(`found spam message: ${message?.text}`).then();
 			deleteMessage(ctx, message?.message_id).then();
 			
 			if(bannedUserID[message?.from?.id]){
 				if(message?.chat?.type !== 'private'){
 					await bot.telegram.banChatMember(message?.chat?.id, message.from.id, (message?.date + 3600));
-					console.log(`User ${message.from.id} banned in ${message?.chat?.id}`);
+					logger.log(`User ${message.from.id} banned in ${message?.chat?.id}`).then();
 				}
 				
 				delete bannedUserID[message?.from?.id];
@@ -523,20 +524,20 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 
 (async() => {
 	try{
-		console.info('Opening DB...');
+		logger.info('Opening DB...').then();
 		await db.open_db();
-		console.info('DB is opened.');
-		console.info('Testing connect to DB...');
+		logger.info('DB is opened.').then();
+		logger.info('Testing connect to DB...').then();
 		await db.query('SELECT 1;');
-		console.info('Connect to DB was been tested.');
+		logger.info('Connect to DB was been tested.').then();
 		
 		
-		console.info('Launch bot...');
+		logger.info('Launch bot...').then();
 		bot.launch().then();
-		console.info('Bot is launching.');
+		logger.info('Bot is launching.').then();
 		
 	}catch(err){
-		console.error(err);
+		logger.err(err).then();
 		bot.stop('SIGINT');
 		return db.close_db();
 	}
