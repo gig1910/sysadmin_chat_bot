@@ -11,6 +11,7 @@ module.exports = {
 		    DB_USER: ''
 		},
 		watch: ['*.js'],
+		ignore_watch : ["node_modules", "logs"],
 		watch_delay: 1000
 	}]
 };
