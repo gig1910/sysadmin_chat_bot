@@ -16,6 +16,7 @@ const HelloText = `Привет, %fName% %lName% \(@%username%\).
 
 const bannedUserID = {};
 
+/*
 const SmileForButtons = [
 	{pict: '🐸', value: 'Лягушка'},
 	{pict: '🐵', value: 'Обезьянка'},
@@ -41,6 +42,7 @@ const SmileForButtons = [
 	{pict: '❄️', value: 'Снежинка'},
 	{pict: '️☂️', value: 'Зонт'},
 ];
+*/
 
 const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${user?.last_name ? (user?.first_name ? ' ' : '') + user?.last_name : ''}`;
 
@@ -111,6 +113,36 @@ const sentQuestion = async(ctx, question, buttons, timeout) => {
 
 //***************************************
 
+/**
+ * @typedef Chat
+ * @property id {Number}
+ * @property type {String
+ * @property title {String}
+ * @property invite_link {String}
+ * @property permission {Object}
+ * @property join_to_send_messages {Boolean}
+ * @property max_reaction_count {Number}
+ */
+
+/**
+ * @typedef User
+ * @property id {Number}
+ * @property username {String}
+ * @property first_name {String}
+ * @property last_name {String}
+ * @property type {String}
+ * @property active_usernames {[String]}
+ * @property bio {String}
+ * @property has_private_forwards {Boolean}
+ * @property max_reaction_count {Number}
+ * @property accent_color_id: {Number}
+ */
+
+/**
+ * Добавление нового чата в БД
+ * @param {Object|Chat} chat
+ * @returns {Promise<*>}
+ */
 const addChat2DB = async chat => db.query(`
             INSERT INTO sysadmin_chat_bot.chats(id, type, title, invite_link, permissions, join_to_send_messages, max_reaction_count, raw)
             VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
@@ -124,6 +156,11 @@ const addChat2DB = async chat => db.query(`
 	[chat?.id, chat?.type, chat?.title, chat?.invite_link, JSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, JSON.stringify(chat)]
 );
 
+/**
+ * Добавление пользователя в БД
+ * @param {Object|User} user
+ * @returns {Promise<*>}
+ */
 const addUser2DB = async user => db.query(`
             INSERT INTO sysadmin_chat_bot.users(id, username, first_name, last_name, type, active_usernames, bio, has_private_forwards, max_reaction_count, accent_color_id, raw)
             VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::TEXT, $5::TEXT, STRING_TO_ARRAY($6::TEXT, ',')::TEXT[], $7::TEXT, $8::BOOL, $9::INT, $10::INT, $11::JSONB)
@@ -140,6 +177,13 @@ const addUser2DB = async user => db.query(`
 	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, user?.accent_color_id, JSON.stringify(user)]
 );
 
+/**
+ * Добавление связки Пользователь/Чат в БД
+ * @param {Object|Chat} chat
+ * @param {Object|User} user
+ * @param {Boolean} bNew
+ * @returns {Promise<*>}
+ */
 const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
             INSERT INTO sysadmin_chat_bot.users_chats(user_id, chat_id, new_user)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BOOL)
@@ -147,13 +191,26 @@ const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
 	[user?.id, chat?.id, bNew]
 );
 
+/**
+ * Удаление пользователя из связки пользователь/чат
+ * @param {Object|Chat} chat
+ * @param {Object|User} user
+ * @returns {Promise<*>}
+ */
 const removeUserFromChat2DB = async(chat, user) => db.query(`
             DELETE FROM sysadmin_chat_bot.users_chats
             WHERE user_id=$1::BIGINT AND chat_id=$2::BIGINT`,
 	[user?.id, chat?.id]
 );
 
+/**
+ * Получение статуса пользователя для конкретного чата
+ * @param {Object|Chat} chat
+ * @param {Object|User} user
+ * @returns {Promise<Boolean>}
+ */
 const getUserStateFromChat = async(chat, user) => {
+	/** @type {{rows:[{new_user: Boolean}]}} */
 	const res = await db.query(
 		`SELECT NEW_USER
          FROM sysadmin_chat_bot.users_chats
@@ -164,12 +221,21 @@ const getUserStateFromChat = async(chat, user) => {
 	return res?.rows[0]?.new_user;
 };
 
+/**
+ * Добавление сообщений в БД
+ * @param {Object} ctx
+ * @param {Object|Chat} chat
+ * @param {Object|User} user
+ * @param {Object} message
+ * @returns {Promise<*>}
+ */
 const addMessage2DB = async(ctx, chat, user, message) => db.query(`
             INSERT INTO sysadmin_chat_bot.messages (message_id, chat_id, user_id, message, ctx)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, $5::JSONB)
             ON CONFLICT DO NOTHING;`,
 	[message?.message_id, chat?.id, user?.id, JSON.stringify(message), JSON.stringify(ctx)]);
 
+/*
 const getChatUserQuestion = async(chat, user) => {
 	const res = await db.query(
 		`SELECT answer
@@ -193,6 +259,7 @@ const getChatUserQuestion = async(chat, user) => {
 	}
 	
 };
+*/
 
 //***************************************
 
@@ -332,15 +399,13 @@ bot.on('new_chat_members', async(ctx) => {
 		const _buttons = [];
 		let bAccept = false;
 		for(let i = 0; i < 3; i++){
-			const bTrue = Math.round(1) >= 0.5;
-			if(bTrue && !bAccept){
+			const bTrue = Math.random() >= 0.5;
+			if((bTrue && !bAccept) || (i===2 && !bAccept)){
 				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
 				bAccept = true;
-			}else if(i === 2 && !bAccept){
-				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-				bAccept = true;
+
 			}else{
-				_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+				_buttons.push(Markup.button.callback(Math.random() >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
 			}
 		}
 		
