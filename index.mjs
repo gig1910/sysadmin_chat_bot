@@ -199,8 +199,10 @@ const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
  * @returns {Promise<*>}
  */
 const removeUserFromChat2DB = async(chat, user) => db.query(`
-            DELETE FROM sysadmin_chat_bot.users_chats
-            WHERE user_id=$1::BIGINT AND chat_id=$2::BIGINT`,
+            DELETE
+            FROM sysadmin_chat_bot.users_chats
+            WHERE user_id = $1::BIGINT
+              AND chat_id = $2::BIGINT`,
 	[user?.id, chat?.id]
 );
 
@@ -208,18 +210,21 @@ const removeUserFromChat2DB = async(chat, user) => db.query(`
  * Получение статуса пользователя для конкретного чата
  * @param {Object|Chat} chat
  * @param {Object|User} user
- * @returns {Promise<Boolean>}
+ * @returns {Promise<{new_user: Boolean, blocked: Boolean}>}
  */
 const getUserStateFromChat = async(chat, user) => {
 	/** @type {{rows:[{new_user: Boolean}]}} */
 	const res = await db.query(
-		`SELECT NEW_USER
+		`SELECT NEW_USER, isBlocked as is_blocked
          FROM sysadmin_chat_bot.users_chats
          WHERE user_id = $1::BIGINT
            AND chat_id = $2::BIGINT;`,
 		[user?.id, chat?.id]
 	);
-	return res?.rows[0]?.new_user;
+	return {
+		new_user: res?.rows[0]?.new_user,
+		blocked:  res?.rows[0]?.is_blocked
+	};
 };
 
 /**
@@ -281,7 +286,7 @@ bot.command('getchatid', async(ctx) => {
 	const chat = ctx?.chat;
 	const user = ctx.from;
 	const message = ctx?.message || ctx?.update?.edited_message;
-
+	
 	// Сохраняем сообщение
 	addMessage2DB(ctx, chat, user, message).then();
 	
@@ -322,11 +327,11 @@ bot.command('test', async(ctx) => {
 	const chat = ctx?.chat;
 	const user = ctx.from;
 	const message = ctx?.message || ctx?.update?.edited_message;
-
+	
 	const arr = (/\/test (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
 	const test_message = arr ? arr[1] : message?.text;
 	// deleteMessage(ctx, message?.message_id).then();
-
+	
 	// Сохраняем сообщение
 	addMessage2DB(ctx, chat, user, message).then();
 	
@@ -357,8 +362,8 @@ bot.action('apply_rules', async(ctx) => {
 	// Сохраняем сообщение
 	addMessage2DB(ctx, chat, user, message).then();
 	
-	const bNewUser = await getUserStateFromChat(chat, user);
-	if(bNewUser === false){
+	const userState = await getUserStateFromChat(chat, user);
+	if(userState?.new_user === false){
 		sendAutoRemoveMsg(ctx, `${makeName(user)}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
 		return false;
 		
@@ -374,7 +379,7 @@ bot.on('new_chat_members', async(ctx) => {
 	const arr = [];
 	logger.log('new_chat_members').then();
 	
-	const func = async (user) => {
+	const func = async(user) => {
 		const message = ctx?.message;
 		const chat = message.chat;
 		
@@ -401,10 +406,10 @@ bot.on('new_chat_members', async(ctx) => {
 		let bAccept = false;
 		for(let i = 0; i < 3; i++){
 			const bTrue = Math.random() >= 0.5;
-			if((bTrue && !bAccept) || (i===2 && !bAccept)){
+			if(!bAccept && (bTrue || i > 1)){
 				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
 				bAccept = true;
-
+				
 			}else{
 				_buttons.push(Markup.button.callback(Math.random() >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
 			}
@@ -415,7 +420,7 @@ bot.on('new_chat_members', async(ctx) => {
 			3600000);
 	};
 	
-	for(let i=0; i<ctx?.message?.new_chat_members; i++){
+	for(let i = 0; i < ctx?.message?.new_chat_members; i++){
 		const user = ctx?.message?.new_chat_members[i];
 		arr.push(func(user));
 	}
@@ -427,7 +432,7 @@ bot.on('left_chat_member', async(ctx) => {
 	const arr = [];
 	logger.log('left_chat_member').then();
 	
-	const func = async (user) => {
+	const func = async(user) => {
 		const message = ctx?.message;
 		const chat = message.chat;
 		
@@ -441,15 +446,27 @@ bot.on('left_chat_member', async(ctx) => {
 		deleteMessage(ctx, ctx?.message?.id).then();
 	};
 	
-	for(let i=0; i<ctx?.message?.left_chat_member	; i++){
-		const user = ctx?.message?.left_chat_member	[i];
+	for(let i = 0; i < ctx?.message?.left_chat_member; i++){
+		const user = ctx?.message?.left_chat_member    [i];
 		arr.push(func(user));
 	}
 	
 	return Promise.all(arr);
 });
 
-bot.on(['text', 'message', 'edited_message'], async(ctx) => {
+/*
+"pre_checkout_query" | "poll_answer" | "poll" | "shipping_query" | "chat_join_request" | "chat_boost" | "removed_chat_boost" | "has_media_spoiler" | "new_chat_members" | "left_chat_member" |
+"new_chat_title" | "new_chat_photo" | "delete_chat_photo" | "group_chat_created" | "supergroup_chat_created" | "channel_chat_created" | "message_auto_delete_timer_changed" | "migrate_to_chat_id" |
+"migrate_from_chat_id" | "pinned_message" | "invoice" | "successful_payment" | "connected_website" | "write_access_allowed" | "passport_data" | "proximity_alert_triggered" | "boost_added" |
+"forum_topic_created" | "forum_topic_edited" | "forum_topic_closed" | "forum_topic_reopened" | "general_forum_topic_hidden" | "general_forum_topic_unhidden" |
+"giveaway_created" | "giveaway" | "giveaway_winners" | "giveaway_completed" | "video_chat_scheduled" | "video_chat_started" | "video_chat_ended" | "video_chat_participants_invited" |
+"web_app_data" | "game" | "story" | "venue" | "forward_date"
+*/
+bot.on([
+	'text', 'message', 'edited_message', 'sticker', 'animation', 'audio', 'document', 'photo', 'video', 'video_note', 'voice',
+	'channel_post', 'chat_member', 'chosen_inline_result', 'edited_channel_post', 'message_reaction', 'message_reaction_count',
+	'my_chat_member', 'chat_join_request', 'contact', 'dice', 'location', 'users_shared', 'chat_shared'
+], async(ctx) => {
 	logger.log('chat message').then();
 	const message = ctx?.message || ctx?.update?.edited_message;
 	const chat = message.chat;
@@ -462,8 +479,12 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	await addUser2DB(user);
 	
 	//Получаем значение участника для чата
-	const bNewUser = await getUserStateFromChat(chat, user);
-	if(typeof (bNewUser) !== 'boolean'){
+	const userState = await getUserStateFromChat(chat, user);
+	if(userState?.blocked){
+		// Пользователь УЖЕ заблокирован. Просто удаляем его сообщение
+		return deleteMessage(ctx, message?.message_id);
+		
+	}else if(typeof (userState?.new_user) !== 'boolean'){
 		// добавляем участника в чат как нового
 		await addUser2Chat2DB(chat, user, true);
 	}
@@ -471,9 +492,9 @@ bot.on(['text', 'message', 'edited_message'], async(ctx) => {
 	// Сохраняем сообщение
 	addMessage2DB(ctx, chat, user, message).then();
 	
-	if(bNewUser !== false){
+	if(userState?.new_user !== false){
 		await deleteMessage(ctx, message?.message_id);
-
+		
 		const _buttons = [];
 		let bAccept = false;
 		for(let i = 0; i < 3; i++){
