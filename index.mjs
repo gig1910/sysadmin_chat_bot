@@ -543,6 +543,8 @@ bot.on([
 	}
 });
 
+let process_users_handler;
+
 (async() => {
 	try{
 		logger.info('Opening DB...').then();
@@ -556,6 +558,37 @@ bot.on([
 		logger.info('Launch bot...').then();
 		bot.launch().then();
 		logger.info('Bot is launching.').then();
+		
+		process_users_handler = setInterval(async() => { // Запуск процесса очистки группы от ботов, которые более чем 3 часа не отвечают на запрос принятия правил группы (запуск раз в полчаса)
+			logger.info('Start interval function for clear chats...').then();
+			
+			logger.info('getting forgotten users from chats...').then();
+			// Получаем список всех пользователей, которые отправили сообщение в чат или вошли в чат, но так и не приняли правила чата (99,9999% что это боты)
+			const users = await db.query(`
+                SELECT UC.CHAT_ID, UC.USER_ID
+                FROM SYSADMIN_CHAT_BOT.USERS_CHATS UC
+                         JOIN SYSADMIN_CHAT_BOT.MESSAGES M ON UC.USER_ID = M.USER_ID
+                WHERE UC.CHAT_ID = -1001325427983
+                  AND UC.NEW_USER
+                  AND NOT UC.ISBLOCKED
+                GROUP BY UC.CHAT_ID, UC.USER_ID
+                HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
+                ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`);
+			
+			for(let i = 0; i < users.rows.length; i++){
+				const user = users.rows[i];
+				if(user){
+					logger.info(`Blocked user ${user.user_id} in chat ${user.chat_id}...`).then();
+					await bot.telegram.banChatMember(user.chat_id, user.user_id);
+					await db.query(`
+                        UPDATE SYSADMIN_CHAT_BOT.USERS_CHATS UC
+                        SET isblocked= TRUE
+                        WHERE chat_id = $1::BIGINT
+                          AND user_id = $2::BIGINT;`, [user.chat_id, user.user_id]);
+				}
+			}
+			
+		}, 10000);
 		
 	}catch(err){
 		logger.err(err).then();
