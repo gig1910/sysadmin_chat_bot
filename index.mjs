@@ -588,7 +588,7 @@ let process_users_handler;
 				}
 			}
 			
-		}, 10000);
+		}, 60000);
 		
 	}catch(err){
 		logger.err(err).then();
