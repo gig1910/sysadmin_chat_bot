@@ -3,11 +3,7 @@ import * as logger from './common/logger.mjs';
 
 import {Markup, Telegraf} from 'telegraf';
 
-import {generateRegExp} from './common/regexp.mjs';
-import {spam_rules} from './spam_rules/index.mjs';
-
-import {isSpam} from './common/gemini.mjs';
-import {isSpamMessage} from './common/openAI.mjs';
+import * as deepseek from './common/deepseek.mjs';
 
 //-----------------------------
 
@@ -73,6 +69,7 @@ const deleteMessage = async(ctx, msg_id) => {
  * @param {Boolean}            [isMarkdown = false]
  * @returns {Promise<TextMessage>}
  */
+
 const sendMessage = async(ctx, message, isMarkdown) => {
 	try{
 		let msg;
@@ -80,6 +77,29 @@ const sendMessage = async(ctx, message, isMarkdown) => {
 			msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2'});
 		}else{
 			msg = await ctx.sendMessage(message);
+		}
+		return msg;
+		
+	}catch(err){
+		logger.warn(err).then();
+	}
+};
+
+/**
+ * Отправка сообщений
+ * @param {Object}   ctx
+ * @param {Number}   reply_to
+ * @param {String}   message
+ * @param {Boolean} [isMarkdown = false]
+ * @returns {Promise<TextMessage>}
+ */
+const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
+	try{
+		let msg;
+		if(isMarkdown){
+			msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2', reply_to_message_id: reply_to});
+		}else{
+			msg = await ctx.sendMessage(message, {reply_to_message_id: reply_to});
 		}
 		return msg;
 		
@@ -351,45 +371,24 @@ bot.command('test', async(ctx) => {
 	// Сохраняем сообщение
 	addMessage2DB(ctx, chat, user, message).then();
 	
-	for(let re of spam_rules || []){
-		const _re = generateRegExp(re);
-		if(_re?.test(test_message)){
-			logger.log(`found spam message: ${test_message}`).then();
-			
-			deleteMessage(ctx, message?.message_id).then();
-			
-			return sendAutoRemoveMsg(ctx,
-				`Распознан спам по правилу: ${re}`,
-				false,
-				20000);
-		}
-	}
 	return sendAutoRemoveMsg(ctx,
 		`Не попадает под правила распознавания спама`,
 		false,
 		20000);
 });
 
-bot.command('gemini', async(ctx) => {
-	const chat = ctx?.chat;
-	const user = ctx.from;
+bot.command('deepseek', async(ctx) => {
 	const message = ctx?.message || ctx?.update?.edited_message;
 	
-	const arr = (/\/gemini (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
+	const arr = (/\/deepseek (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
 	const prompt = arr ? arr[1] : message?.text;
-	// deleteMessage(ctx, message?.message_id).then();
+
+	const answer = await deepseek.testMessage(prompt);
 	
-	// Сохраняем сообщение
-	// addMessage2DB(ctx, chat, user, prompt).then();
-	
-	const result = await model.generateContent(prompt);
-	const response = await result.response;
-	const answer = response.text();
-	
-	return sendAutoRemoveMsg(ctx,
-		answer,
-		false,
-		20000);
+	return replyMessage(ctx,
+		ctx?.message?.message_id,
+		answer || 'NOT_ANSWER',
+		false);
 });
 
 bot.action('apply_rules', async(ctx) => {
@@ -535,35 +534,36 @@ bot.on([
 		await deleteMessage(ctx, message?.message_id);
 		
 		if(ctx?.message?.text){
-			if(await isSpamMessage(ctx?.message?.text)){
-				// Просто удаляем пользователя как спамера
-				return removeUserFromChat(ctx, chat, user);
-				
-			}else{
-				// Показываем приветственный текст с предложением принять правила группы
-				const _buttons = [];
-				let bAccept = false;
-				for(let i = 0; i < 3; i++){
-					const bTrue = Math.round(1) >= 0.5;
-					if(bTrue && !bAccept){
-						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-						bAccept = true;
-					}else if(i === 2 && !bAccept){
-						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-						bAccept = true;
-					}else{
-						_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
-					}
+			// Показываем приветственный текст с предложением принять правила группы
+			const _buttons = [];
+			let bAccept = false;
+			for(let i = 0; i < 3; i++){
+				const bTrue = Math.round(1) >= 0.5;
+				if(bTrue && !bAccept){
+					_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+					bAccept = true;
+				}else if(i === 2 && !bAccept){
+					_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+					bAccept = true;
+				}else{
+					_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
 				}
-				
-				return sentQuestion(ctx,
-					`${makeName(
-						user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
-					_buttons,
-					20000
-				);
 			}
 			
+			deepseek.isSpamMessage(ctx?.message?.text).then(async res => {
+				if(res){
+					// Просто удаляем пользователя как спамера
+					return removeUserFromChat(ctx, chat, user);
+				}
+			});
+			
+			return sentQuestion(ctx,
+				`${makeName(
+					user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
+				_buttons,
+				20000
+			);
+
 		}else if(!ctx.message){
 			// Ну кто начинает "Общение" выкладывая сразу только картинку? СПАМЕР!!!!
 			
