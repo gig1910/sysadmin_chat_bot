@@ -29,7 +29,7 @@ export async function isSpamMessage(message){
 					const answer = await response.json();
 					
 					logger.log(`Ответ от AI "${answer?.choices && answer.choices[0]?.message?.content}"`).then();
-					return (answer?.choices && answer.choices[0]?.message?.content?.toUpperCase() === 'YES');
+					return (answer?.choices && answer.choices[0]?.message?.content?.toUpperCase().includes('YES'));
 					
 				}catch(err){
 					logger.err(err).then();
