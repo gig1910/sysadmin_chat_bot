@@ -1,14 +1,15 @@
+import * as db from './common/db.mjs';
+import * as logger from './common/logger.mjs';
+
 import {Markup, Telegraf} from 'telegraf';
 
 import {generateRegExp} from './common/regexp.mjs';
 import {spam_rules} from './spam_rules/index.mjs';
 
-import * as db from './common/db.mjs';
-import * as logger from './common/logger.mjs';
+import {isSpam} from './common/gemini.mjs';
+import {isSpamMessage} from './common/openAI.mjs';
 
-import {GoogleGenerativeAI} from "@google/generative-ai";
-const genAI = new GoogleGenerativeAI(process.env.API_KEY);
-const model = genAI.getGenerativeModel({model: "gemini-1.5-flash"});
+//-----------------------------
 
 logger.info('Starting main').then();
 const bot = new Telegraf(process.env.TOKEN);
@@ -244,14 +245,14 @@ const addMessage2DB = async(ctx, chat, user, message) => db.query(`
             ON CONFLICT DO NOTHING;`,
 	[message?.message_id, chat?.id, user?.id, JSON.stringify(message), JSON.stringify(ctx)]);
 
-const removeUserFromChat = async (ctx, chat, user) => {
-	logger.info(`Blocked user ${user.user_id} in chat ${user.chat_id}...`).then();
-	await bot.telegram.banChatMember(user.chat_id, user.user_id);
+const removeUserFromChat = async(ctx, chat, user) => {
+	logger.info(`Blocked user ${user.id} in chat ${chat.id}...`).then();
+	await bot.telegram.banChatMember(chat.id, user.id);
 	await db.query(`
-                        UPDATE SYSADMIN_CHAT_BOT.USERS_CHATS UC
-                        SET isblocked= TRUE
-                        WHERE chat_id = $1::BIGINT
-                          AND user_id = $2::BIGINT;`, [user.chat_id, user.user_id]);
+        UPDATE SYSADMIN_CHAT_BOT.USERS_CHATS UC
+        SET isblocked= TRUE
+        WHERE chat_id = $1::BIGINT
+          AND user_id = $2::BIGINT;`, [chat.id, user.id]);
 	
 	return sendAutoRemoveMsg(ctx, `Участник ${makeName(user)} удалён как спамер.`);
 };
@@ -533,19 +534,12 @@ bot.on([
 		// Обработка сообщения нового пользователя
 		await deleteMessage(ctx, message?.message_id);
 		
-		if(ctx.message.text){
-			//Проверяем сообщение на спам
-/*			logger.info('Запускаем проверку на СПАМ...').then();
-			const prompt = `Определи сообщение в кавычках на спам, ответь ДА или НЕТ "${message?.text}"`;
-			const result = await model.generateContent(prompt);
-			const response = await result.response;
-			const answer = response.text();
-			logger.log(`ответ от Gemini для "${message?.text}" - ${answer}`).then();
-			if(answer.toUpperCase() === 'ДА\n'){
+		if(ctx?.message?.text){
+			if(await isSpamMessage(ctx?.message?.text)){
 				// Просто удаляем пользователя как спамера
 				return removeUserFromChat(ctx, chat, user);
-
-			}else{*/
+				
+			}else{
 				// Показываем приветственный текст с предложением принять правила группы
 				const _buttons = [];
 				let bAccept = false;
@@ -568,11 +562,11 @@ bot.on([
 					_buttons,
 					20000
 				);
-			// }
+			}
 			
 		}else if(!ctx.message){
 			// Ну кто начинает "Общение" выкладывая сразу только картинку? СПАМЕР!!!!
-
+			
 			// Просто удаляем пользователя как спамера
 			return removeUserFromChat(ctx, chat, user);
 		}
