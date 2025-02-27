@@ -36,6 +36,7 @@ export async function testMessage(message){
 		const completion = await openai.chat.completions.create({
 			messages: [{role: 'user', content: prompt}],
 			model:    'deepseek-chat',
+			temperature: 1.3,
 		});
 		
 		return completion.choices[0].message.content;

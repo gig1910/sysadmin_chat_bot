@@ -15,36 +15,6 @@ const HelloText = `Привет, %fName% %lName% \(@%username%\).
 
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
 
-const bannedUserID = {};
-
-/*
-const SmileForButtons = [
-	{pict: '🐸', value: 'Лягушка'},
-	{pict: '🐵', value: 'Обезьянка'},
-	{pict: '🐥', value: 'Цыплёнок'},
-	{pict: '🪿', value: 'Гусь'},
-	{pict: '🦉️', value: 'Сова'},
-	{pict: '🦖', value: 'Динозавр'},
-	{pict: '🦑', value: 'Кальмар'},
-	{pict: '🦐', value: 'Креветка'},
-	{pict: '🐖', value: 'Поросёнок'},
-	{pict: '🐈', value: 'Котёнок'},
-	{pict: '🍄', value: 'Гриб'},
-	{pict: '‍🐚', value: 'Ракушка'},
-	{pict: '🌹', value: 'Цветок'},
-	{pict: '🌲', value: 'Ёлка'},
-	{pict: '🌵', value: 'Кактус'},
-	{pict: '🌈', value: 'Радуга'},
-	{pict: '☀️', value: 'Солнце'},
-	{pict: '🦀', value: 'Краб'},
-	{pict: '🦈', value: 'Акула'},
-	{pict: '🐝☂', value: 'Пчела'},
-	{pict: '💧', value: 'Капля'},
-	{pict: '❄️', value: 'Снежинка'},
-	{pict: '️☂️', value: 'Зонт'},
-];
-*/
-
 const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${user?.last_name ? (user?.first_name ? ' ' : '') + user?.last_name : ''}`;
 
 /**
@@ -277,32 +247,6 @@ const removeUserFromChat = async(ctx, chat, user) => {
 	return sendAutoRemoveMsg(ctx, `Участник ${makeName(user)} удалён как спамер.`);
 };
 
-/*
-const getChatUserQuestion = async(chat, user) => {
-	const res = await db.query(
-		`SELECT answer
-         FROM sysadmin_chat_bot.chats_users_test_question
-         WHERE user_id = $1::BIGINT
-           AND chat_id = $2::BIGINT;`,
-		[user?.id, chat?.id]
-	);
-	
-	if(res?.rows[0]?.answer){
-		return res?.rows[0]?.answer;
-		
-	}else{
-		const res = await db.query(
-			`SELECT answer
-             FROM sysadmin_chat_bot.chats_users_test_question
-             WHERE user_id = $1::BIGINT
-               AND chat_id = $2::BIGINT;`,
-			[user?.id, chat?.id]
-		);
-	}
-	
-};
-*/
-
 //***************************************
 
 bot.onerror = err => {
@@ -357,24 +301,6 @@ bot.command('question', async(ctx) => {
 8\\.  Поясните сразу все, что *УЖЕ* пробовали делать для исправления ситуации, а также *ВСЕ* ограничения\\. Этим Вы убережете свою нервную систему от неподходящих Вам ответов\\.`,
 		{parse_mode: 'MarkdownV2'}
 	);
-});
-
-bot.command('test', async(ctx) => {
-	const chat = ctx?.chat;
-	const user = ctx.from;
-	const message = ctx?.message || ctx?.update?.edited_message;
-	
-	const arr = (/\/test (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
-	const test_message = arr ? arr[1] : message?.text;
-	// deleteMessage(ctx, message?.message_id).then();
-	
-	// Сохраняем сообщение
-	addMessage2DB(ctx, chat, user, message).then();
-	
-	return sendAutoRemoveMsg(ctx,
-		`Не попадает под правила распознавания спама`,
-		false,
-		20000);
 });
 
 bot.command('deepseek', async(ctx) => {
@@ -442,13 +368,13 @@ bot.on('new_chat_members', async(ctx) => {
 		const _buttons = [];
 		let bAccept = false;
 		for(let i = 0; i < 3; i++){
-			const bTrue = Math.random() >= 0.5;
+			const bTrue = (Math.random() >= 0.5);
 			if(!bAccept && (bTrue || i > 1)){
 				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
 				bAccept = true;
 				
 			}else{
-				_buttons.push(Markup.button.callback(Math.random() >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+				_buttons.push(Markup.button.callback((Math.random() >= 0.5) ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
 			}
 		}
 		
