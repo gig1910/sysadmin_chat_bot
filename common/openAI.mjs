@@ -3,7 +3,7 @@ import logger from "./logger.mjs";
 
 export async function isSpamMessage(message){
 	try{
-		const prompt = `Test messages in quotes and say only YES if message simulate as SPAM "${message}"`;
+		const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
 		
 		logger.log(`Тест сообщения на спам "${message}"`).then();
 		const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
