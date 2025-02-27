@@ -6,6 +6,9 @@ import {spam_rules} from './spam_rules/index.mjs';
 import * as db from './common/db.mjs';
 import * as logger from './common/logger.mjs';
 
+import {GoogleGenerativeAI} from "@google/generative-ai";
+const genAI = new GoogleGenerativeAI(process.env.API_KEY);
+const model = genAI.getGenerativeModel({model: "gemini-1.5-flash"});
 
 logger.info('Starting main').then();
 const bot = new Telegraf(process.env.TOKEN);
@@ -241,6 +244,18 @@ const addMessage2DB = async(ctx, chat, user, message) => db.query(`
             ON CONFLICT DO NOTHING;`,
 	[message?.message_id, chat?.id, user?.id, JSON.stringify(message), JSON.stringify(ctx)]);
 
+const removeUserFromChat = async (ctx, chat, user) => {
+	logger.info(`Blocked user ${user.user_id} in chat ${user.chat_id}...`).then();
+	await bot.telegram.banChatMember(user.chat_id, user.user_id);
+	await db.query(`
+                        UPDATE SYSADMIN_CHAT_BOT.USERS_CHATS UC
+                        SET isblocked= TRUE
+                        WHERE chat_id = $1::BIGINT
+                          AND user_id = $2::BIGINT;`, [user.chat_id, user.user_id]);
+	
+	return sendAutoRemoveMsg(ctx, `Участник ${makeName(user)} удалён как спамер.`);
+};
+
 /*
 const getChatUserQuestion = async(chat, user) => {
 	const res = await db.query(
@@ -350,6 +365,28 @@ bot.command('test', async(ctx) => {
 	}
 	return sendAutoRemoveMsg(ctx,
 		`Не попадает под правила распознавания спама`,
+		false,
+		20000);
+});
+
+bot.command('gemini', async(ctx) => {
+	const chat = ctx?.chat;
+	const user = ctx.from;
+	const message = ctx?.message || ctx?.update?.edited_message;
+	
+	const arr = (/\/gemini (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
+	const prompt = arr ? arr[1] : message?.text;
+	// deleteMessage(ctx, message?.message_id).then();
+	
+	// Сохраняем сообщение
+	// addMessage2DB(ctx, chat, user, prompt).then();
+	
+	const result = await model.generateContent(prompt);
+	const response = await result.response;
+	const answer = response.text();
+	
+	return sendAutoRemoveMsg(ctx,
+		answer,
 		false,
 		20000);
 });
@@ -493,52 +530,49 @@ bot.on([
 	addMessage2DB(ctx, chat, user, message).then();
 	
 	if(userState?.new_user !== false){
+		// Обработка сообщения нового пользователя
 		await deleteMessage(ctx, message?.message_id);
 		
-		const _buttons = [];
-		let bAccept = false;
-		for(let i = 0; i < 3; i++){
-			const bTrue = Math.round(1) >= 0.5;
-			if(bTrue && !bAccept){
-				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-				bAccept = true;
-			}else if(i === 2 && !bAccept){
-				_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-				bAccept = true;
+		if(ctx.message.caption){
+			//Проверяем сообщение на спам
+			const prompt = `Определи сообщение в кавычках на спам, ответь ДА или НЕТ "${message?.caption}"`;
+			const result = await model.generateContent(prompt);
+			const response = await result.response;
+			const answer = response.text();
+			if(answer.toUpperCase() === 'ДА\n'){
+				// Просто удаляем пользователя как спамера
+				return removeUserFromChat(ctx, chat, user);
+
 			}else{
-				_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
-			}
-		}
-		
-		return sentQuestion(ctx,
-			`${makeName(
-				user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
-			_buttons,
-			20000
-		);
-	}
-	
-	for(let re of spam_rules || []){
-		if(generateRegExp(re)?.test(message?.text)){
-			logger.log(`found spam message: ${message?.text}`).then();
-			deleteMessage(ctx, message?.message_id).then();
-			
-			if(bannedUserID[message?.from?.id]){
-				if(message?.chat?.type !== 'private'){
-					await bot.telegram.banChatMember(message?.chat?.id, message.from.id, (message?.date + 3600));
-					logger.log(`User ${message.from.id} banned in ${message?.chat?.id}`).then();
+				// Показываем приветственный текст с предложением принять правила группы
+				const _buttons = [];
+				let bAccept = false;
+				for(let i = 0; i < 3; i++){
+					const bTrue = Math.round(1) >= 0.5;
+					if(bTrue && !bAccept){
+						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+						bAccept = true;
+					}else if(i === 2 && !bAccept){
+						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+						bAccept = true;
+					}else{
+						_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+					}
 				}
 				
-				delete bannedUserID[message?.from?.id];
-				
-			}else{
-				bannedUserID[message?.from?.id] = true;
+				return sentQuestion(ctx,
+					`${makeName(
+						user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
+					_buttons,
+					20000
+				);
 			}
 			
-			return sendAutoRemoveMsg(ctx,
-				`${message?.from?.first_name || ''} ${message?.from.last_name || ''}${message?.from?.username ? ` (@${message.from.username})` : ''} — Первое и последнее предупреждение. В нашем канале нет места спаму.`,
-				false,
-				20000);
+		}else if(!ctx.message){
+			// Ну кто начинает "Общение" выкладывая сразу только картинку? СПАМЕР!!!!
+
+			// Просто удаляем пользователя как спамера
+			return removeUserFromChat(ctx, chat, user);
 		}
 	}
 });
