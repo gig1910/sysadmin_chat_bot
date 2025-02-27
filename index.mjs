@@ -533,12 +533,14 @@ bot.on([
 		// Обработка сообщения нового пользователя
 		await deleteMessage(ctx, message?.message_id);
 		
-		if(ctx.message.caption){
+		if(ctx.message.text){
 			//Проверяем сообщение на спам
-			const prompt = `Определи сообщение в кавычках на спам, ответь ДА или НЕТ "${message?.caption}"`;
+			logger.info('Запускаем проверку на СПАМ...').then();
+			const prompt = `Определи сообщение в кавычках на спам, ответь ДА или НЕТ "${message?.text}"`;
 			const result = await model.generateContent(prompt);
 			const response = await result.response;
 			const answer = response.text();
+			logger.log(`ответ от Gemini для "${message?.text}" - ${answer}`).then();
 			if(answer.toUpperCase() === 'ДА\n'){
 				// Просто удаляем пользователя как спамера
 				return removeUserFromChat(ctx, chat, user);
