@@ -535,7 +535,7 @@ bot.on([
 		
 		if(ctx.message.text){
 			//Проверяем сообщение на спам
-			logger.info('Запускаем проверку на СПАМ...').then();
+/*			logger.info('Запускаем проверку на СПАМ...').then();
 			const prompt = `Определи сообщение в кавычках на спам, ответь ДА или НЕТ "${message?.text}"`;
 			const result = await model.generateContent(prompt);
 			const response = await result.response;
@@ -545,7 +545,7 @@ bot.on([
 				// Просто удаляем пользователя как спамера
 				return removeUserFromChat(ctx, chat, user);
 
-			}else{
+			}else{*/
 				// Показываем приветственный текст с предложением принять правила группы
 				const _buttons = [];
 				let bAccept = false;
@@ -568,7 +568,7 @@ bot.on([
 					_buttons,
 					20000
 				);
-			}
+			// }
 			
 		}else if(!ctx.message){
 			// Ну кто начинает "Общение" выкладывая сразу только картинку? СПАМЕР!!!!
