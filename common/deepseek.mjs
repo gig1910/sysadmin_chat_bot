@@ -67,3 +67,26 @@ export async function sendQuestion(message){
 		return '';
 	}
 }
+
+export async function sendMessages(messages){
+	if(messages?.length > 0){
+		try{
+			logger.log(`Отправка сообщений:"`).then();
+			logger.dir(messages).then();
+			const completion = await openai.chat.completions.create({
+				messages:    messages,
+				model:       'deepseek-chat',
+				temperature: 1.5,
+			});
+			
+			logger.trace(`Ответ:`).then();
+			logger.dir(completion?.choices[0]?.message).then();
+			return completion?.choices[0]?.message;
+			
+		}catch(err){
+			logger.err(err).then();
+			
+			return '';
+		}
+	}
+}

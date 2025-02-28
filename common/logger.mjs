@@ -1,7 +1,7 @@
-import fs           from 'fs/promises';
-import {constants}  from 'fs';
+import fs from 'fs/promises';
+import {constants} from 'fs';
 
-let log_lev  = 9;
+let log_lev = 9;
 let log_file = './logs/log.txt';
 
 /**
@@ -23,11 +23,11 @@ export function setLogLev(logLev){
  */
 export async function setLogFile(fileName){
 	log_file = typeof (fileName) === 'string'
-			   ? fileName || `log_${(new Date()).toISOString().substring(0, 19).replace('T', '_')}.txt`
-			   : `log_${(new Date()).toISOString().substring(0, 19).replace('T', '_')}.txt`;
-
+	           ? fileName || `log_${(new Date()).toISOString().substring(0, 19).replace('T', '_')}.txt`
+	           : `log_${(new Date()).toISOString().substring(0, 19).replace('T', '_')}.txt`;
+	
 	console.info(`Установлен лог-файл: ${fileName}`);
-
+	
 	if(await fileAccess(fileName)){
 		await rotateFileLogName(log_file);
 	}
@@ -43,11 +43,11 @@ async function fileAccess(fileName){
 	if(!fileName){
 		throw new Error(`Не передано имя файла`);
 	}
-
+	
 	try{
 		await fs.access(fileName, constants.W_OK);
 		return true;
-
+		
 	}catch(err){
 		// console.info(err); // Ошибка проверки существования файла - значит его нет
 		return false
@@ -66,15 +66,15 @@ async function fileRename(fileName, newFileName){
 		if(!(await fileAccess(newFileName))){
 			try{
 				return fs.rename(fileName, newFileName);
-
+				
 			}catch(err){
 				console.error(err);
 			}
-
+			
 		}else{
 			throw new Error(`Файл ${fileName} существует`);
 		}
-
+		
 	}else{
 		throw new Error(`Файл ${fileName} не доступен`);
 	}
@@ -98,11 +98,11 @@ function isNum(str){
 function getBaseFileName(fileName){
 	if(typeof (fileName) === 'string'){
 		let _arr = fileName.split('.');
-		let ext  = _arr.pop();
-
+		let ext = _arr.pop();
+		
 		//Собираем базовое имя файла
 		return isNum(ext) ? _arr.join('.') : _arr.concat(ext).join('.');
-
+		
 	}else{
 		return '';
 	}
@@ -118,13 +118,13 @@ function getBaseFileName(fileName){
  */
 async function rotateFileLogName(fileName, index, baseFileName){
 	index = parseInt(index, 10) || 1;
-
+	
 	baseFileName = baseFileName || getBaseFileName(fileName);
-
+	
 	if((await fileAccess(`${baseFileName}.${index}`))){
 		await rotateFileLogName(`${baseFileName}.${index}`, index + 1, baseFileName);
 	}
-
+	
 	return fileRename(fileName, `${baseFileName}.${index}`);
 }
 
@@ -140,13 +140,13 @@ async function write2LogFile(message){
 		if(message){
 			await fs.writeFile(_fd, `${String(message)}\n`);
 		}
-
+		
 		await _fd.close();
 		_fd = undefined;
-
+		
 	}catch(err){
 		console.error(err);
-
+		
 	}finally{
 		_fd && _fd.close();
 	}
@@ -218,12 +218,13 @@ await setLogFile(log_file);
 
 export default {
 	setLogFile: setLogFile,
-	setLogLev: setLogLev,
-	err: err,
-	warn: warn,
-	info: info,
-	log: log,
-	trace: trace,
-	trace1: trace1,
-	trace2: trace2
+	setLogLev:  setLogLev,
+	err:        err,
+	warn:       warn,
+	info:       info,
+	log:        log,
+	trace:      trace,
+	trace1:     trace1,
+	trace2:     trace2,
+	dir:        dir
 }

@@ -4,6 +4,7 @@ import * as logger from './common/logger.mjs';
 import {Markup, Telegraf} from 'telegraf';
 
 import * as deepseek from './common/deepseek.mjs';
+import {query} from "./common/db.mjs";
 
 //-----------------------------
 
@@ -67,7 +68,7 @@ const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 	try{
 		let msg;
 		if(isMarkdown){
-			msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2', reply_to_message_id: reply_to});
+			msg = await ctx.sendMessage(message, {parse_mode: 'Markdown', reply_to_message_id: reply_to});
 		}else{
 			msg = await ctx.sendMessage(message, {reply_to_message_id: reply_to});
 		}
@@ -308,7 +309,7 @@ bot.command('deepseek_test_spam', async(ctx) => {
 	
 	const arr = (/\/deepseek_test_spam (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
 	const prompt = arr ? arr[1] : message?.text;
-
+	
 	const answer = await deepseek.testMessage(prompt);
 	
 	return replyMessage(ctx,
@@ -322,7 +323,7 @@ bot.command('deepseek_message', async(ctx) => {
 	
 	const arr = (/\/deepseek_message (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
 	const prompt = arr ? arr[1] : message?.text;
-
+	
 	const answer = await deepseek.sendQuestion(prompt);
 	
 	return replyMessage(ctx,
@@ -449,7 +450,6 @@ bot.on([
 	const chat = message.chat;
 	const user = message?.from;
 	
-	// const chat = await ctx.telegram.getChat(chatID);
 	await addChat2DB(chat);
 	
 	// Проверяем наличие участника в БД
@@ -469,46 +469,77 @@ bot.on([
 	// Сохраняем сообщение
 	addMessage2DB(ctx, chat, user, message).then();
 	
-	if(userState?.new_user !== false){
-		// Обработка сообщения нового пользователя
-		await deleteMessage(ctx, message?.message_id);
+	if(chat.id > 0){    // Личные сообщения
+		// Получаем список последних 20 сообщений (для нормального сохранения истории) и скармливаем это DeepSeek
+		// Ответ отправляем как ответ на сообщение, т.к. возможен разрыв с ответах, что бы понимать на что DeepSeek отвечал
+		const botInfo = ctx?.botInfo;
+		if(botInfo){
+			await addUser2DB(botInfo);
+			const messages = await query(`
+                SELECT user_id, message->>'text' AS message
+                FROM (SELECT user_id, message, timestamp
+                      FROM SYSADMIN_CHAT_BOT.MESSAGES
+                      WHERE chat_id = $1::BIGINT
+                        AND user_id IN ($2::BIGINT, $3::BIGINT)
+                      AND substring(message->>'text' from 1 for 1) <> '/'
+                      ORDER BY timestamp DESC
+                      LIMIT 20) _
+                ORDER BY timestamp;
+			`, [chat.id, user.id, botInfo.id]);
+			
+			const answer = await deepseek.sendMessages(messages?.rows?.map(el => { return {role: (parseInt(el.user_id, 10) === botInfo.id ? 'assistant' : 'user'), content: el.message}; }));
+			const mess = await replyMessage(
+				ctx,
+				message?.message_id,
+				answer?.content?.replace(/\./igm, '\.').replace(/\(/igm, '\('),
+				true);
+			addMessage2DB(ctx, chat, botInfo, mess).then();
+			
+			return mess;
+		}
 		
-		if(ctx?.message?.text){
-			// Показываем приветственный текст с предложением принять правила группы
-			const _buttons = [];
-			let bAccept = false;
-			for(let i = 0; i < 3; i++){
-				const bTrue = Math.round(1) >= 0.5;
-				if(bTrue && !bAccept){
-					_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-					bAccept = true;
-				}else if(i === 2 && !bAccept){
-					_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-					bAccept = true;
-				}else{
-					_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+	}else{              // Сообщение в группу
+		if(userState?.new_user !== false){
+			// Обработка сообщения нового пользователя
+			await deleteMessage(ctx, message?.message_id);
+			
+			if(ctx?.message?.text){
+				// Показываем приветственный текст с предложением принять правила группы
+				const _buttons = [];
+				let bAccept = false;
+				for(let i = 0; i < 3; i++){
+					const bTrue = Math.round(1) >= 0.5;
+					if(bTrue && !bAccept){
+						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+						bAccept = true;
+					}else if(i === 2 && !bAccept){
+						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+						bAccept = true;
+					}else{
+						_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+					}
 				}
+				
+				deepseek.isSpamMessage(ctx?.message?.text).then(async res => {
+					if(res){
+						// Просто удаляем пользователя как спамера
+						return removeUserFromChat(ctx, chat, user);
+					}
+				});
+				
+				return sentQuestion(ctx,
+					`${makeName(
+						user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
+					_buttons,
+					20000
+				);
+				
+			}else if(!ctx.message){
+				// Ну кто начинает "Общение" выкладывая сразу только картинку? СПАМЕР!!!!
+				
+				// Просто удаляем пользователя как спамера
+				return removeUserFromChat(ctx, chat, user);
 			}
-			
-			deepseek.isSpamMessage(ctx?.message?.text).then(async res => {
-				if(res){
-					// Просто удаляем пользователя как спамера
-					return removeUserFromChat(ctx, chat, user);
-				}
-			});
-			
-			return sentQuestion(ctx,
-				`${makeName(
-					user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
-				_buttons,
-				20000
-			);
-
-		}else if(!ctx.message){
-			// Ну кто начинает "Общение" выкладывая сразу только картинку? СПАМЕР!!!!
-			
-			// Просто удаляем пользователя как спамера
-			return removeUserFromChat(ctx, chat, user);
 		}
 	}
 });
