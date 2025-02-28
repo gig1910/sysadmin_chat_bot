@@ -303,13 +303,27 @@ bot.command('question', async(ctx) => {
 	);
 });
 
-bot.command('deepseek', async(ctx) => {
+bot.command('deepseek_test_spam', async(ctx) => {
 	const message = ctx?.message || ctx?.update?.edited_message;
 	
-	const arr = (/\/deepseek (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
+	const arr = (/\/deepseek_test_spam (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
 	const prompt = arr ? arr[1] : message?.text;
 
 	const answer = await deepseek.testMessage(prompt);
+	
+	return replyMessage(ctx,
+		ctx?.message?.message_id,
+		answer || 'NOT_ANSWER',
+		false);
+});
+
+bot.command('deepseek_message', async(ctx) => {
+	const message = ctx?.message || ctx?.update?.edited_message;
+	
+	const arr = (/\/deepseek_message (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
+	const prompt = arr ? arr[1] : message?.text;
+
+	const answer = await deepseek.sendQuestion(prompt);
 	
 	return replyMessage(ctx,
 		ctx?.message?.message_id,

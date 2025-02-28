@@ -47,3 +47,23 @@ export async function testMessage(message){
 		return '';
 	}
 }
+
+export async function sendQuestion(message){
+	try{
+		const prompt = `${message}`;
+		
+		logger.log(`Отправка сообщения "${message}"`).then();
+		const completion = await openai.chat.completions.create({
+			messages: [{role: 'user', content: prompt}],
+			model:    'deepseek-chat',
+			temperature: 1.5,
+		});
+		
+		return completion.choices[0].message.content;
+		
+	}catch(err){
+		logger.err(err).then();
+		
+		return '';
+	}
+}
