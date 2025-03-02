@@ -26,7 +26,7 @@ const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${user?.l
  */
 const deleteMessage = async(ctx, msg_id) => {
 	try{
-		return await ctx.deleteMessage(msg_id);
+		return ctx.deleteMessage(msg_id);
 		
 	}catch(err){
 		logger.warn(err).then();
@@ -47,14 +47,14 @@ const sendMessage = async(ctx, message, isMarkdown) => {
 			while (message){
 				const mess_to_send = message.substring(0, 4000);
 				message = message.substring(4000);
-				msg = await ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown'});
+				msg = ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown'});
 			}
 
 		}else{
 			while (message){
 				const mess_to_send = message.substring(0, 4000);
 				message = message.substring(4000);
-				msg = await ctx.sendMessage(mess_to_send);
+				msg = ctx.sendMessage(mess_to_send);
 			}
 		}
 		return msg;
@@ -79,14 +79,14 @@ const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 			while (message){
 				const mess_to_send = message.substring(0, 4000);
 				message = message.substring(4000);
-				msg = await ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown', reply_to_message_id: reply_to});
+				msg = ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown', reply_to_message_id: reply_to});
 			}
 
 		}else{
 			while (message){
 				const mess_to_send = message.substring(0, 4000);
 				message = message.substring(4000);
-				msg = await ctx.sendMessage(mess_to_send, {reply_to_message_id: reply_to});
+				msg = ctx.sendMessage(mess_to_send, {reply_to_message_id: reply_to});
 			}
 		}
 		return msg;
@@ -106,9 +106,12 @@ const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
  * @return {Promise<Message.TextMessage>}
  */
 const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
-	const msg = await sendMessage(ctx, message, isMarkdown);
+	const msg = sendMessage(ctx, message, isMarkdown);
 	
-	setTimeout(((ctx, msg) => () => deleteMessage(ctx, msg?.message_id))(ctx, msg), timeout || 1000);
+	setTimeout(((ctx, msg) =>  async () => {
+		msg = await msg;
+		return deleteMessage(ctx, msg?.message_id);
+	})(ctx, msg), timeout || 1000);
 	
 	return msg;
 };
@@ -122,13 +125,16 @@ const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
  * @return {Promise<Message.TextMessage>}
  */
 const sentQuestion = async(ctx, question, buttons, timeout) => {
-	const msg = await ctx.reply(
+	const msg = ctx.reply(
 		question,
 		Markup.inlineKeyboard([buttons]).oneTime().resize()
 	);
 	
 	if(timeout > 0){
-		setTimeout(((ctx, msg) => () => deleteMessage(ctx, msg?.message_id))(ctx, msg), timeout);
+		setTimeout(((ctx, msg) => async () => {
+			msg = await msg;
+			return deleteMessage(ctx, msg?.message_id);
+		})(ctx, msg), timeout);
 	}
 	
 	return msg;
@@ -316,15 +322,15 @@ const deepSeekTalks = async(ctx) => {
                                                                                                       M.TIMESTAMP                                                AS TS
                                                                                                FROM SYSADMIN_CHAT_BOT.MESSAGES M
                                                                                                         JOIN MESSAGES MM ON M.MESSAGE_ID = MM.REPLY_ID)
-                 SELECT USER_ID, MESSAGE_TEXT
-                 FROM MESSAGES
+                 SELECT M.USER_ID, U.USERNAME, M.MESSAGE_TEXT
+                 FROM MESSAGES M JOIN SYSADMIN_CHAT_BOT.USERS U ON M.USER_ID=U.ID
                  ORDER BY TS
                  LIMIT 20;`, [message.message_id]))?.rows?.map(row => {
 				if(row){
 					// Отрезаем командный текст, если он есть
 					const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
 					return {
-						role:    (parseInt(row.user_id, 10) === ctx?.botInfo.id ? 'assistant' : 'user'),
+						role:    (parseInt(row.user_id, 10) === ctx?.botInfo.id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool'
 						content: arr ? arr[1] : row.message_text
 					};
 					

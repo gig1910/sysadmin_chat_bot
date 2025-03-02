@@ -4,6 +4,7 @@ import logger from "./logger.mjs";
 const openai = new OpenAI({
 	baseURL: 'https://api.deepseek.com',
 	apiKey:  process.env.DEEPSEEK_API_KEY,
+	timeout: 10 * 60 * 1000, // 10 минут
 });
 
 export async function isSpamMessage(message){
