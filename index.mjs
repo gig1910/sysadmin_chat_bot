@@ -1,5 +1,6 @@
 import * as db from './common/db.mjs';
 import * as logger from './common/logger.mjs';
+import CircularJSON from 'circular-json';
 
 import {Markup, Telegraf} from 'telegraf';
 
@@ -156,7 +157,7 @@ const addChat2DB = async chat => db.query(`
                                           JOIN_TO_SEND_MESSAGES=EXCLUDED.JOIN_TO_SEND_MESSAGES,
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           RAW=EXCLUDED.RAW;`,
-	[chat?.id, chat?.type, chat?.title, chat?.invite_link, JSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, JSON.stringify(chat)]
+	[chat?.id, chat?.type, chat?.title, chat?.invite_link, CircularJSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, CircularJSON.stringify(chat)]
 );
 
 /**
@@ -177,7 +178,7 @@ const addUser2DB = async user => db.query(`
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           ACCENT_COLOR_ID=EXCLUDED.ACCENT_COLOR_ID,
                                           RAW=EXCLUDED.RAW;`,
-	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, user?.accent_color_id, JSON.stringify(user)]
+	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, user?.accent_color_id, CircularJSON.stringify(user)]
 );
 
 /**
@@ -241,7 +242,7 @@ const addMessage2DB = async(ctx, chat, user, message) => db.query(`
             INSERT INTO SYSADMIN_CHAT_BOT.MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, $5::JSONB)
             ON CONFLICT DO NOTHING;`,
-	[message?.message_id, chat?.id, user?.id, JSON.stringify(message), JSON.stringify(ctx)]);
+	[message?.message_id, chat?.id, user?.id, CircularJSON.stringify(message), CircularJSON.stringify(ctx)]);
 
 /**
  * @param {CTX} ctx
