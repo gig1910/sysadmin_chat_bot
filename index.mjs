@@ -311,18 +311,20 @@ const deepSeekTalks = async(ctx) => {
 				}else{
 					return null;
 				}
-			}).filter(row => !!row);
+			}).filter(row => !!row)?.filter(mess => !!mess?.content);
 			
-			// Запрашиваем ответ у DeepSeek
-			const answer = await deepseek.sendMessages(messages);
-			if(answer){
-				// Отправляем ответ DeepSeek как ответ на сообщение
-				const mess = await replyMessage(ctx, message?.message_id, answer?.content, true);
-				
-				//Сохраняем ответ DeepSeek в БД для получения полноценного диалога
-				addMessage2DB(ctx, chat, botInfo, mess).then();
-				
-				return mess;
+			if(messages?.length > 0){
+				// Запрашиваем ответ у DeepSeek
+				const answer = await deepseek.sendMessages(messages);
+				if(answer){
+					// Отправляем ответ DeepSeek как ответ на сообщение
+					const mess = await replyMessage(ctx, message?.message_id, answer?.content, true);
+					
+					//Сохраняем ответ DeepSeek в БД для получения полноценного диалога
+					addMessage2DB(ctx, chat, botInfo, mess).then();
+					
+					return mess;
+				}
 			}
 		}
 	}
