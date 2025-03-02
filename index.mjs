@@ -302,7 +302,7 @@ const deepSeekTalks = async(ctx) => {
                  LIMIT 20;`, [message.message_id]))?.rows?.map(row => {
 				if(row){
 					// Отрезаем командный текст, если он есть
-					const arr = (/\/\w+ (.*)/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
+					const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
 					return {
 						role:    (parseInt(row.user_id, 10) === ctx?.botInfo.id ? 'assistant' : 'user'),
 						content: arr ? arr[1] : row.message_text
