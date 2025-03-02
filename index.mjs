@@ -265,7 +265,7 @@ const getUserStateFromChat = async(chat, user) => {
  */
 const addMessage2DB = async(ctx, chat, user, message) => db.query(`
             INSERT INTO SYSADMIN_CHAT_BOT.MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
-            VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, $5::JSONB)
+            VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, ($5::JSONB - 'telegram'))
             ON CONFLICT DO NOTHING;`,
 	[message?.message_id, chat?.id, user?.id, CircularJSON.stringify(message), CircularJSON.stringify(ctx)]);
 
