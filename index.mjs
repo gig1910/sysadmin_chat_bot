@@ -45,15 +45,15 @@ const sendMessage = async(ctx, message, isMarkdown) => {
 		let msg;
 		if(isMarkdown){
 			while (message){
-				const mess_to_send = message.substring(0, 9500);
-				message = message.substring(9500);
+				const mess_to_send = message.substring(0, 4000);
+				message = message.substring(4000);
 				msg = await ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown'});
 			}
 
 		}else{
 			while (message){
-				const mess_to_send = message.substring(0, 9500);
-				message = message.substring(9500);
+				const mess_to_send = message.substring(0, 4000);
+				message = message.substring(4000);
 				msg = await ctx.sendMessage(mess_to_send);
 			}
 		}
@@ -77,15 +77,15 @@ const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 		let msg;
 		if(isMarkdown){
 			while (message){
-				const mess_to_send = message.substring(0, 9500);
-				message = message.substring(9500);
+				const mess_to_send = message.substring(0, 4000);
+				message = message.substring(4000);
 				msg = await ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown', reply_to_message_id: reply_to});
 			}
 
 		}else{
 			while (message){
-				const mess_to_send = message.substring(0, 9500);
-				message = message.substring(9500);
+				const mess_to_send = message.substring(0, 4000);
+				message = message.substring(4000);
 				msg = await ctx.sendMessage(mess_to_send, {reply_to_message_id: reply_to});
 			}
 		}
