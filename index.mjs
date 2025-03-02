@@ -4,14 +4,13 @@ import * as logger from './common/logger.mjs';
 import {Markup, Telegraf} from 'telegraf';
 
 import * as deepseek from './common/deepseek.mjs';
-import {query} from "./common/db.mjs";
 
 //-----------------------------
 
 logger.info('Starting main').then();
 const bot = new Telegraf(process.env.TOKEN);
 
-const HelloText = `Привет, %fName% %lName% \(@%username%\).
+const HelloText = `Привет, %fName% %lName% (@%username%).
 Добро пожаловать в чат "Системный Администратор"
 
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
@@ -20,7 +19,7 @@ const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${user?.l
 
 /**
  * Удаление сообщения
- * @param {Object} ctx
+ * @param {CTX}    ctx
  * @param {Number} msg_id
  * @returns {Promise<Boolean>}
  */
@@ -35,17 +34,16 @@ const deleteMessage = async(ctx, msg_id) => {
 
 /**
  * Отправка сообщений
- * @param {Object}   ctx
+ * @param {CTX}      ctx
  * @param {String}   message
- * @param {Boolean}            [isMarkdown = false]
- * @returns {Promise<TextMessage>}
+ * @param {Boolean} [isMarkdown = false]
+ * @returns {Promise<Message.TextMessage>}
  */
-
 const sendMessage = async(ctx, message, isMarkdown) => {
 	try{
 		let msg;
 		if(isMarkdown){
-			msg = await ctx.sendMessage(message, {parse_mode: 'MarkdownV2'});
+			msg = await ctx.sendMessage(message, {parse_mode: 'Markdown'});
 		}else{
 			msg = await ctx.sendMessage(message);
 		}
@@ -58,11 +56,11 @@ const sendMessage = async(ctx, message, isMarkdown) => {
 
 /**
  * Отправка сообщений
- * @param {Object}   ctx
+ * @param {CTX}      ctx
  * @param {Number}   reply_to
  * @param {String}   message
  * @param {Boolean} [isMarkdown = false]
- * @returns {Promise<TextMessage>}
+ * @returns {Promise<Message.TextMessage>}
  */
 const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 	try{
@@ -80,11 +78,12 @@ const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 };
 
 /**
- * @param {Object}   ctx
+ * Отправка авто-удаляемого сообщения
+ * @param {CTX}      ctx
  * @param {String}   message
  * @param {Boolean} [isMarkdown=false]
  * @param {Number}  [timeout=1000]
- * @return {Promise<*>}
+ * @return {Promise<Message.TextMessage>}
  */
 const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
 	const msg = await sendMessage(ctx, message, isMarkdown);
@@ -94,6 +93,14 @@ const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
 	return msg;
 };
 
+/**
+ * Отправка вопроса с кнопками ответа
+ * @param {CTX}      ctx
+ * @param {String}   question
+ * @param {Array}    buttons
+ * @param {Number}  [timeout=1000]
+ * @return {Promise<Message.TextMessage>}
+ */
 const sentQuestion = async(ctx, question, buttons, timeout) => {
 	const msg = await ctx.reply(
 		question,
@@ -140,15 +147,15 @@ const sentQuestion = async(ctx, question, buttons, timeout) => {
  * @returns {Promise<*>}
  */
 const addChat2DB = async chat => db.query(`
-            INSERT INTO sysadmin_chat_bot.chats(id, type, title, invite_link, permissions, join_to_send_messages, max_reaction_count, raw)
+            INSERT INTO SYSADMIN_CHAT_BOT.CHATS(ID, TYPE, TITLE, INVITE_LINK, PERMISSIONS, JOIN_TO_SEND_MESSAGES, MAX_REACTION_COUNT, RAW)
             VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
-            ON CONFLICT(id) DO UPDATE SET type=excluded.type,
-                                          title=excluded.title,
-                                          invite_link=excluded.invite_link,
-                                          permissions=excluded.permissions,
-                                          join_to_send_messages=excluded.join_to_send_messages,
-                                          max_reaction_count=excluded.max_reaction_count,
-                                          raw=excluded.raw;`,
+            ON CONFLICT(ID) DO UPDATE SET TYPE=EXCLUDED.TYPE,
+                                          TITLE=EXCLUDED.TITLE,
+                                          INVITE_LINK=EXCLUDED.INVITE_LINK,
+                                          PERMISSIONS=EXCLUDED.PERMISSIONS,
+                                          JOIN_TO_SEND_MESSAGES=EXCLUDED.JOIN_TO_SEND_MESSAGES,
+                                          MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
+                                          RAW=EXCLUDED.RAW;`,
 	[chat?.id, chat?.type, chat?.title, chat?.invite_link, JSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, JSON.stringify(chat)]
 );
 
@@ -158,18 +165,18 @@ const addChat2DB = async chat => db.query(`
  * @returns {Promise<*>}
  */
 const addUser2DB = async user => db.query(`
-            INSERT INTO sysadmin_chat_bot.users(id, username, first_name, last_name, type, active_usernames, bio, has_private_forwards, max_reaction_count, accent_color_id, raw)
+            INSERT INTO SYSADMIN_CHAT_BOT.USERS(ID, USERNAME, FIRST_NAME, LAST_NAME, TYPE, ACTIVE_USERNAMES, BIO, HAS_PRIVATE_FORWARDS, MAX_REACTION_COUNT, ACCENT_COLOR_ID, RAW)
             VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::TEXT, $5::TEXT, STRING_TO_ARRAY($6::TEXT, ',')::TEXT[], $7::TEXT, $8::BOOL, $9::INT, $10::INT, $11::JSONB)
-            ON CONFLICT(id) DO UPDATE SET username=excluded.username,
-                                          first_name=excluded.first_name,
-                                          last_name=excluded.last_name,
-                                          type=excluded.type,
-                                          active_usernames=excluded.active_usernames,
-                                          bio=excluded.bio,
-                                          has_private_forwards=excluded.has_private_forwards,
-                                          max_reaction_count=excluded.max_reaction_count,
-                                          accent_color_id=excluded.accent_color_id,
-                                          raw=excluded.raw;`,
+            ON CONFLICT(ID) DO UPDATE SET USERNAME=EXCLUDED.USERNAME,
+                                          FIRST_NAME=EXCLUDED.FIRST_NAME,
+                                          LAST_NAME=EXCLUDED.LAST_NAME,
+                                          TYPE=EXCLUDED.TYPE,
+                                          ACTIVE_USERNAMES=EXCLUDED.ACTIVE_USERNAMES,
+                                          BIO=EXCLUDED.BIO,
+                                          HAS_PRIVATE_FORWARDS=EXCLUDED.HAS_PRIVATE_FORWARDS,
+                                          MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
+                                          ACCENT_COLOR_ID=EXCLUDED.ACCENT_COLOR_ID,
+                                          RAW=EXCLUDED.RAW;`,
 	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, user?.accent_color_id, JSON.stringify(user)]
 );
 
@@ -181,9 +188,9 @@ const addUser2DB = async user => db.query(`
  * @returns {Promise<*>}
  */
 const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
-            INSERT INTO sysadmin_chat_bot.users_chats(user_id, chat_id, new_user)
+            INSERT INTO SYSADMIN_CHAT_BOT.USERS_CHATS(USER_ID, CHAT_ID, NEW_USER)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BOOL)
-            ON CONFLICT(user_id, chat_id) DO UPDATE SET new_user=excluded.new_user;`,
+            ON CONFLICT(USER_ID, CHAT_ID) DO UPDATE SET NEW_USER=EXCLUDED.NEW_USER;`,
 	[user?.id, chat?.id, bNew]
 );
 
@@ -195,9 +202,9 @@ const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
  */
 const removeUserFromChat2DB = async(chat, user) => db.query(`
             DELETE
-            FROM sysadmin_chat_bot.users_chats
-            WHERE user_id = $1::BIGINT
-              AND chat_id = $2::BIGINT`,
+            FROM SYSADMIN_CHAT_BOT.USERS_CHATS
+            WHERE USER_ID = $1::BIGINT
+              AND CHAT_ID = $2::BIGINT`,
 	[user?.id, chat?.id]
 );
 
@@ -208,12 +215,12 @@ const removeUserFromChat2DB = async(chat, user) => db.query(`
  * @returns {Promise<{new_user: Boolean, blocked: Boolean}>}
  */
 const getUserStateFromChat = async(chat, user) => {
-	/** @type {{rows:[{new_user: Boolean}]}} */
+	/** @type {{rows:[{new_user: Boolean, is_blocked: Boolean}]}} */
 	const res = await db.query(
-		`SELECT NEW_USER, isBlocked as is_blocked
-         FROM sysadmin_chat_bot.users_chats
-         WHERE user_id = $1::BIGINT
-           AND chat_id = $2::BIGINT;`,
+		`SELECT NEW_USER, IS_BLOCKED
+         FROM SYSADMIN_CHAT_BOT.USERS_CHATS
+         WHERE USER_ID = $1::BIGINT
+           AND CHAT_ID = $2::BIGINT;`,
 		[user?.id, chat?.id]
 	);
 	return {
@@ -231,21 +238,137 @@ const getUserStateFromChat = async(chat, user) => {
  * @returns {Promise<*>}
  */
 const addMessage2DB = async(ctx, chat, user, message) => db.query(`
-            INSERT INTO sysadmin_chat_bot.messages (message_id, chat_id, user_id, message, ctx)
+            INSERT INTO SYSADMIN_CHAT_BOT.MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, $5::JSONB)
             ON CONFLICT DO NOTHING;`,
 	[message?.message_id, chat?.id, user?.id, JSON.stringify(message), JSON.stringify(ctx)]);
 
+/**
+ * @param {CTX} ctx
+ * @param {Chat} chat
+ * @param {User} user
+ * @returns {Promise<Message.TextMessage>}
+ */
 const removeUserFromChat = async(ctx, chat, user) => {
 	logger.info(`Blocked user ${user.id} in chat ${chat.id}...`).then();
 	await bot.telegram.banChatMember(chat.id, user.id);
 	await db.query(`
         UPDATE SYSADMIN_CHAT_BOT.USERS_CHATS UC
-        SET isblocked= TRUE
-        WHERE chat_id = $1::BIGINT
-          AND user_id = $2::BIGINT;`, [chat.id, user.id]);
+        SET IS_BLOCKED= TRUE
+        WHERE CHAT_ID = $1::BIGINT
+          AND USER_ID = $2::BIGINT;`, [chat.id, user.id]);
 	
 	return sendAutoRemoveMsg(ctx, `Участник ${makeName(user)} удалён как спамер.`);
+};
+
+// ------------------------------------------------
+
+/**
+ * Диалог с DeepSeek
+ * @param {CTX} ctx
+ * @returns {Promise<Message.TextMessage>}
+ */
+const deepSeekTalks = async(ctx) => {
+	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	if(message && message?.message_id && message?.text){
+		const botInfo = ctx?.botInfo;
+		if(botInfo && botInfo?.is_bot && botInfo?.id){
+			const chat = message.chat;
+			const user = message.from;
+			
+			// Сохраняем сообщение (Тут надо дождаться что бы из БД получить сразу весь диалог, включая ЭТО сообщение )
+			await addMessage2DB(ctx, chat, user, message);
+			
+			// Получаем историю сообщений
+			const messages = (await db.query(
+				`WITH RECURSIVE MESSAGES (MESSAGE_ID, USER_ID, MESSAGE_TEXT, REPLY_ID, TS) AS (SELECT M.MESSAGE_ID,
+                                                                                                      (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                                                                                      M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                                                                                      (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                                                                                      M.TIMESTAMP                                                AS TS
+                                                                                               FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                               WHERE M.MESSAGE_ID = $1::BIGINT
+                                                                                               UNION
+                                                                                               SELECT M.MESSAGE_ID,
+                                                                                                      (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                                                                                      M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                                                                                      (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                                                                                      M.TIMESTAMP                                                AS TS
+                                                                                               FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                                        JOIN MESSAGES MM ON M.MESSAGE_ID = MM.REPLY_ID)
+                 SELECT USER_ID, MESSAGE_TEXT
+                 FROM MESSAGES
+                 ORDER BY TS
+                 LIMIT 20;`, [message.message_id]))?.rows?.map(row => {
+				if(row){
+					// Отрезаем командный текст, если он есть
+					const arr = (/\/\w+ (.*)/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
+					return {
+						role:    (parseInt(row.user_id, 10) === ctx?.botInfo.id ? 'assistant' : 'user'),
+						content: arr ? arr[1] : row.message_text
+					};
+					
+				}else{
+					return null;
+				}
+			}).filter(row => !!row);
+			
+			// Запрашиваем ответ у DeepSeek
+			const answer = await deepseek.sendMessages(messages);
+			if(answer){
+				// Отправляем ответ DeepSeek как ответ на сообщение
+				const mess = await replyMessage(ctx, message?.message_id, answer?.content, true);
+				
+				//Сохраняем ответ DeepSeek в БД для получения полноценного диалога
+				addMessage2DB(ctx, chat, botInfo, mess).then();
+				
+				return mess;
+			}
+		}
+	}
+};
+
+/**
+ * Проверка, что ответ на сообщение был на цепочку сообщений общения с DeepSeek
+ * @param {CTX} ctx
+ * @returns {Promise<Boolean>}
+ */
+const hasDeepSeekTalkMarker = async(ctx) => {
+	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	if(message && message?.message_id && message?.text){
+		const botInfo = ctx?.botInfo;
+		if(botInfo && botInfo?.is_bot && botInfo?.id){
+			const chat = message.chat;
+			const user = message.from;
+			
+			// Получаем историю сообщений и проверяем наличие команды на диалог с deepseek
+			return !!(await db.query(
+				`
+                    SELECT EXISTS(SELECT *
+                                  FROM (WITH RECURSIVE MESSAGES (MESSAGE_ID, USER_ID, MESSAGE_TEXT, REPLY_ID, TS) AS (SELECT M.MESSAGE_ID,
+                                                                                                                             (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                                                                                                             M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                                                                                                             (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                                                                                                             M.TIMESTAMP                                                AS TS
+                                                                                                                      FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                                                      WHERE M.MESSAGE_ID = $1::BIGINT
+                                                                                                                      UNION
+                                                                                                                      SELECT M.MESSAGE_ID,
+                                                                                                                             (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                                                                                                             M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                                                                                                             (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                                                                                                             M.TIMESTAMP                                                AS TS
+                                                                                                                      FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                                                               JOIN MESSAGES MM ON M.MESSAGE_ID = MM.REPLY_ID)
+                                        SELECT *
+                                        FROM MESSAGES
+                                        ORDER BY TS
+                                        LIMIT 20) _
+                                  WHERE UPPER(SUBSTRING(MESSAGE_TEXT FROM 1 FOR 9)) = '/DEEPSEEK');`, [message.message_id]))?.rows[0].exists;
+		}
+	}
+	
+	return false;
 };
 
 //***************************************
@@ -255,111 +378,103 @@ bot.onerror = err => {
 	logger.dir(err).then();
 };
 
-bot.start((ctx) => {
+bot.start(/** @param {CTX} ctx */ async(ctx) => {
 	return sendAutoRemoveMsg(ctx, 'Welcome');
 });
 
-bot.help((ctx) => {
-	return sendAutoRemoveMsg(ctx, 'Bot for telergamm SysAdminChat');
+bot.help(/** @param {CTX} ctx */ async(ctx) => {
+	return sendAutoRemoveMsg(ctx, 'Bot for telergam SysAdminChat');
 });
 
-bot.command('getchatid', async(ctx) => {
-	const chat = ctx?.chat;
-	const user = ctx.from;
-	const message = ctx?.message || ctx?.update?.edited_message;
+bot.command('getchatid', /** @param {CTX} ctx */ async(ctx) => {
+	/** @type {Chat} */ const chat = ctx?.update?.chat;
+	/** @type {From} */ const user = ctx?.update?.from;
+	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	
 	// Сохраняем сообщение
 	addMessage2DB(ctx, chat, user, message).then();
 	
-	deleteMessage(ctx, message?.message_id).then();
+	deleteMessage(ctx, message?.message_id).then(); // Удаляем командное сообщение
 	
 	return sendAutoRemoveMsg(ctx, `userID: ${user?.id}; chatID: ${chat?.id}`, false, 5000);
 });
 
-bot.command('question', async(ctx) => {
-	return ctx.sendMessage(`*Как правильно задавать вопрос\\.*
+bot.command('question', /** @param {CTX} ctx */ async(ctx) => {
+	return ctx.sendMessage(
+		`*Как правильно задавать вопрос.*
 
-1\\. Укажите именно суть вопроса\\.
-    "*_У меня не работает_*” \\- это не вопрос\\. *__Это утверждение__*\\.
+1. Укажите именно суть вопроса.
+    "*У меня не работает*” - это не вопрос. *Это утверждение*.
 
 Пример вопроса:
-    ◦ "У меня не выполняется \\(\`КОД|КОМАНДА|МЕТОД\`\\) и выдаёт ошибку в \\(\`КОНСОЛЬ|ЛОГ|ЭКРАН\`\\)"\\.
-    ◦ "У меня есть \\(\`НЕОБХОДИМОСТЬ|ПОТРЕБНОСТЬ|ЗАДАЧА\`\\) сделать \\(\`ДЕЙСТВИЕ\`\\) посредством \\(\`ЧЕГО\\-ТО\`\\)\\. \\(\`КАК|ЧЕМ\`\\) это можно выполнить?"
-    ◦ "При использовании \\(\`КОМАНДЫ|НАСТРОЙКИ|ПРОГРАММЫ\`\\) у меня возникает \`ОШИБКА\`\\. Вот \\(\`КОД|КОМАНДА|НАСТРОЙКА\`\\), как я пробую\\."
+    ◦ "У меня не выполняется (\`КОД|КОМАНДА|МЕТОД\`) и выдаёт ошибку в (\`КОНСОЛЬ|ЛОГ|ЭКРАН\`)".
+    ◦ "У меня есть (\`НЕОБХОДИМОСТЬ|ПОТРЕБНОСТЬ|ЗАДАЧА\`) сделать (\`ДЕЙСТВИЕ\`) посредством (\`ЧЕГО-ТО\`). (\`КАК|ЧЕМ\`) это можно выполнить?"
+    ◦ "При использовании (\`КОМАНДЫ|НАСТРОЙКИ|ПРОГРАММЫ\`) у меня возникает \`ОШИБКА\`. Вот (\`КОД|КОМАНДА|НАСТРОЙКА\`), как я пробую."
 
-2\\. Приведите достаточный для воспроизведения Вашей ошибки минимальный \\(\`КОД|НАСТРОЙКУ|КОНФИГ\`\\) \\(_proof\\-of\\-concept_\\), который при этом ещё не придётся исправлять от ошибок для того, чтобы попробовать его выполнить\\.
+2. Приведите достаточный для воспроизведения Вашей ошибки минимальный (\`КОД|НАСТРОЙКУ|КОНФИГ\`) (_proof-of-concept_), который при этом ещё не придётся исправлять от ошибок для того, чтобы попробовать его выполнить.
 
-3\\. Старайтесь пользоваться [Markdown](https://ru.wikipedia.org/wiki/Markdown) для правильной разметки вашего сообщения \\(смотри справку по мессенджеру\\)\\. Слишком большой текст не размещайте в сообщении \\(приложите вложением\\)\\.
+3. Старайтесь пользоваться [Markdown](https://ru.wikipedia.org/wiki/Markdown) для правильной разметки вашего сообщения (смотри справку по мессенджеру). Слишком большой текст не размещайте в сообщении (приложите вложением).
 
-4\\. При выполнении п\\.3 придерживайтесь принципа достаточной разумности\\. Выкладывать логи за год работы не надо, как и выкладывать сразу всю всю информацию \\(отчёт Aida о Вашей рабочей станции, положения звёзд в момент возникновения ошибки и прочих данных\\)\\. По необходимости всю доп\\. информацию у Вас запросят\\.
+4. При выполнении п.3 придерживайтесь принципа достаточной разумности. Выкладывать логи за год работы не надо, как и выкладывать сразу всю всю информацию (отчёт Aida о Вашей рабочей станции, положения звёзд в момент возникновения ошибки и прочих данных). По необходимости всю доп. информацию у Вас запросят.
 
-5\\. Не выкладывайте архивы на ресурсы, которые требуют просмотра рекламы, денег или ожидания для скачивания\\. Есть множество других хороших файл\\-обменников: [Google Drive](https://drive.google.com), [Облако Mail\\.ru](https://cloud.mail.ru), [Dropbox](https://www.dropbox.com), [Yandex\\.Disk](https://360.yandex.ru/disk)\\. Пользуйтесь ими\\.
+5. Не выкладывайте архивы на ресурсы, которые требуют просмотра рекламы, денег или ожидания для скачивания. Есть множество других хороших файл-обменников: [Google Drive](https://drive.google.com), [Облако Mail.ru](https://cloud.mail.ru), [Dropbox](https://www.dropbox.com), [Yandex.Disk](https://360.yandex.ru/disk). Пользуйтесь ими.
 
-6\\. По возможности приводите полные логи возникновения ошибки, при этом, если они достаточно большие, то архивируйте их\\. Но с учётом п\\.4\\.
+6. По возможности приводите полные логи возникновения ошибки, при этом, если они достаточно большие, то архивируйте их. Но с учётом п.4.
 
-7\\. Указывайте, \`В ЧЕМ\` \\(\`IDE\`, \`компилятор\`, \`браузер\`, \`ПО\`, \`консоль\`, \`ЛОГ\`\\) и на какой \`ОС\` \\(версия, разрядность, виртуализация, тип контейнера\\) проявляется данная ошибка\\.
+7. Указывайте, \`В ЧЕМ\` (\`IDE\`, \`компилятор\`, \`браузер\`, \`ПО\`, \`консоль\`, \`ЛОГ\`) и на какой \`ОС\` (версия, разрядность, виртуализация, тип контейнера) проявляется данная ошибка.
 
-8\\.  Поясните сразу все, что *УЖЕ* пробовали делать для исправления ситуации, а также *ВСЕ* ограничения\\. Этим Вы убережете свою нервную систему от неподходящих Вам ответов\\.`,
-		{parse_mode: 'MarkdownV2'}
+8.  Поясните сразу все, что *УЖЕ* пробовали делать для исправления ситуации, а также *ВСЕ* ограничения. Этим Вы убережете свою нервную систему от неподходящих Вам ответов.`,
+		{parse_mode: 'Markdown'}
 	);
 });
 
-bot.command('deepseek_test_spam', async(ctx) => {
-	const message = ctx?.message || ctx?.update?.edited_message;
-	
-	const arr = (/\/deepseek_test_spam (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
-	const prompt = arr ? arr[1] : message?.text;
-	
-	const answer = await deepseek.testMessage(prompt);
-	
-	return replyMessage(ctx,
-		ctx?.message?.message_id,
-		answer || 'NOT_ANSWER',
-		false);
-});
-
-bot.command('deepseek_message', async(ctx) => {
-	const message = ctx?.message || ctx?.update?.edited_message;
-	
-	const arr = (/\/deepseek_message (.*)/gmi).exec(message?.text?.replace(/\s+/igm, ' '));
-	const prompt = arr ? arr[1] : message?.text;
-	
-	const answer = await deepseek.sendQuestion(prompt);
-	
-	return replyMessage(ctx,
-		ctx?.message?.message_id,
-		answer || 'NOT_ANSWER',
-		false);
-});
-
-bot.action('apply_rules', async(ctx) => {
-	const message = ctx?.update?.callback_query?.message;
-	const chat = message.chat;
-	const user = ctx?.update?.callback_query.from;
-	
-	// Сохраняем сообщение
-	addMessage2DB(ctx, chat, user, message).then();
-	
-	const userState = await getUserStateFromChat(chat, user);
-	if(userState?.new_user === false){
-		sendAutoRemoveMsg(ctx, `${makeName(user)}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
-		return false;
+bot.command('deepseek_test_spam', /** @param {CTX} ctx */ async(ctx) => {
+	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
+	if(message && message.message_id && message?.text){
+		const arr = (/\/deepseek_test_spam (.*)/gmi).exec(message.text?.replace(/\s+/igm, ' '));
+		const prompt = arr ? arr[1] : message.text;
 		
-	}else{
-		// Сбрасываем статус нового участника
-		await addUser2Chat2DB(chat, user, false);
-		sendAutoRemoveMsg(ctx, `Спасибо, ${makeName(user)}. Теперь Вы полноправный член группы.`, false, 20000).then();
-		return true;
+		const answer = await deepseek.testMessage(prompt);
+		
+		return replyMessage(ctx,
+			message.message_id,
+			answer || 'NOT_ANSWER',
+			false);
 	}
 });
 
-bot.on('new_chat_members', async(ctx) => {
+bot.command('deepseek', /** @param {CTX} ctx */ async(ctx) => deepSeekTalks(ctx));
+
+bot.action('apply_rules', /** @param {CTX} ctx */ async(ctx) => {
+	const message = ctx?.update?.callback_query?.message;
+	if(message){
+		const chat = message.chat;
+		const user = ctx?.update?.callback_query.from;
+		
+		// Сохраняем сообщение
+		addMessage2DB(ctx, chat, user, message).then();
+		
+		const userState = await getUserStateFromChat(chat, user);
+		if(userState?.new_user === false){
+			sendAutoRemoveMsg(ctx, `${makeName(user)}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
+			return false;
+			
+		}else{
+			// Сбрасываем статус нового участника
+			await addUser2Chat2DB(chat, user, false);
+			sendAutoRemoveMsg(ctx, `Спасибо, ${makeName(user)}. Теперь Вы полноправный член группы.`, false, 20000).then();
+			return true;
+		}
+	}
+});
+
+bot.on('new_chat_members', /** @param {CTX} ctx */ async(ctx) => {
 	const arr = [];
 	logger.log('new_chat_members').then();
 	
 	const func = async(user) => {
-		const message = ctx?.message;
-		const chat = message.chat;
+		const message = ctx?.update?.message;
+		const chat = message?.chat;
 		
 		// const chat = await ctx.telegram.getChat(chatID);
 		await addChat2DB(chat);
@@ -373,7 +488,7 @@ bot.on('new_chat_members', async(ctx) => {
 		// Сохраняем сообщение
 		addMessage2DB(ctx, chat, user, message).then();
 		
-		deleteMessage(ctx, ctx?.message?.id).then();
+		deleteMessage(ctx, ctx?.update?.message?.message_id).then();
 		
 		const _text = (HelloText || '')
 			.replace(/%fName%/igm, user.first_name || '')
@@ -399,20 +514,20 @@ bot.on('new_chat_members', async(ctx) => {
 	};
 	
 	for(let i = 0; i < ctx?.message?.new_chat_members; i++){
-		const user = ctx?.message?.new_chat_members[i];
+		const user = ctx?.update?.message?.new_chat_members[i];
 		arr.push(func(user));
 	}
 	
 	return Promise.all(arr);
 });
 
-bot.on('left_chat_member', async(ctx) => {
+bot.on('left_chat_member', /** @param {CTX} ctx */ async(ctx) => {
 	const arr = [];
 	logger.log('left_chat_member').then();
 	
 	const func = async(user) => {
-		const message = ctx?.message;
-		const chat = message.chat;
+		const message = ctx?.update?.message;
+		const chat = message?.chat;
 		
 		await addChat2DB(chat);
 		await addUser2DB(user);
@@ -425,7 +540,7 @@ bot.on('left_chat_member', async(ctx) => {
 	};
 	
 	for(let i = 0; i < ctx?.message?.left_chat_member; i++){
-		const user = ctx?.message?.left_chat_member    [i];
+		const user = ctx?.message?.left_chat_member[i];
 		arr.push(func(user));
 	}
 	
@@ -444,101 +559,87 @@ bot.on([
 	'text', 'message', 'edited_message', 'sticker', 'animation', 'audio', 'document', 'photo', 'video', 'video_note', 'voice',
 	'channel_post', 'chat_member', 'chosen_inline_result', 'edited_channel_post', 'message_reaction', 'message_reaction_count',
 	'my_chat_member', 'chat_join_request', 'contact', 'dice', 'location', 'users_shared', 'chat_shared'
-], async(ctx) => {
+], /** @param {CTX} ctx */ async(ctx) => {
 	logger.log('chat message').then();
-	const message = ctx?.message || ctx?.update?.edited_message;
-	const chat = message.chat;
-	const user = message?.from;
-	
-	await addChat2DB(chat);
-	
-	// Проверяем наличие участника в БД
-	await addUser2DB(user);
-	
-	//Получаем значение участника для чата
-	const userState = await getUserStateFromChat(chat, user);
-	if(userState?.blocked){
-		// Пользователь УЖЕ заблокирован. Просто удаляем его сообщение
-		return deleteMessage(ctx, message?.message_id);
+	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
+	if(message && message.message_id){
+		const chat = message.chat;
+		const user = message.from;
 		
-	}else if(typeof (userState?.new_user) !== 'boolean'){
-		// добавляем участника в чат как нового
-		await addUser2Chat2DB(chat, user, true);
-	}
-	
-	// Сохраняем сообщение
-	addMessage2DB(ctx, chat, user, message).then();
-	
-	if(chat.id > 0){    // Личные сообщения
-		// Получаем список последних 20 сообщений (для нормального сохранения истории) и скармливаем это DeepSeek
-		// Ответ отправляем как ответ на сообщение, т.к. возможен разрыв с ответах, что бы понимать на что DeepSeek отвечал
-		const botInfo = ctx?.botInfo;
-		if(botInfo){
-			await addUser2DB(botInfo);
-			const messages = await query(`
-                SELECT user_id, message->>'text' AS message
-                FROM (SELECT user_id, message, timestamp
-                      FROM SYSADMIN_CHAT_BOT.MESSAGES
-                      WHERE chat_id = $1::BIGINT
-                        AND user_id IN ($2::BIGINT, $3::BIGINT)
-                      AND substring(message->>'text' from 1 for 1) <> '/'
-                      ORDER BY timestamp DESC
-                      LIMIT 20) _
-                ORDER BY timestamp;
-			`, [chat.id, user.id, botInfo.id]);
+		await addChat2DB(chat);
+		
+		// Проверяем наличие участника в БД
+		await addUser2DB(user);
+		
+		//Получаем значение участника для чата
+		const userState = await getUserStateFromChat(chat, user);
+		if(userState?.blocked){
+			// Пользователь УЖЕ заблокирован. Просто удаляем его сообщение
+			return deleteMessage(ctx, message.message_id);
 			
-			const answer = await deepseek.sendMessages(messages?.rows?.map(el => { return {role: (parseInt(el.user_id, 10) === botInfo.id ? 'assistant' : 'user'), content: el.message}; }));
-			const mess = await replyMessage(
-				ctx,
-				message?.message_id,
-				answer?.content?.replace(/\./igm, '\.').replace(/\(/igm, '\('),
-				true);
-			addMessage2DB(ctx, chat, botInfo, mess).then();
-			
-			return mess;
+		}else if(typeof (userState?.new_user) !== 'boolean'){
+			// добавляем участника в чат как нового
+			await addUser2Chat2DB(chat, user, true);
 		}
 		
-	}else{              // Сообщение в группу
-		if(userState?.new_user !== false){
-			// Обработка сообщения нового пользователя
-			await deleteMessage(ctx, message?.message_id);
+		// Сохраняем сообщение
+		addMessage2DB(ctx, chat, user, message).then();
+		
+		if(chat.id > 0){    // Личные сообщения
 			
-			if(ctx?.message?.text){
-				// Показываем приветственный текст с предложением принять правила группы
-				const _buttons = [];
-				let bAccept = false;
-				for(let i = 0; i < 3; i++){
-					const bTrue = Math.round(1) >= 0.5;
-					if(bTrue && !bAccept){
-						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-						bAccept = true;
-					}else if(i === 2 && !bAccept){
-						_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
-						bAccept = true;
-					}else{
-						_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+			// Получаем список 20 сообщений как диалог (сообщения по ответам) для нормального сохранения истории и скармливаем это DeepSeek
+			// Ответ отправляем как ответ на сообщение, т.к. возможен разрыв в ответах, что бы понимать на что DeepSeek отвечал
+			return deepSeekTalks(ctx);
+			
+		}else{              // Сообщение в группу
+			if(userState?.new_user !== false){
+				// Обработка сообщения нового пользователя
+				await deleteMessage(ctx, message.message_id);
+				
+				if(message?.text){
+					// Показываем приветственный текст с предложением принять правила группы
+					const _buttons = [];
+					let bAccept = false;
+					for(let i = 0; i < 3; i++){
+						const bTrue = Math.round(1) >= 0.5;
+						if(bTrue && !bAccept){
+							_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+							bAccept = true;
+						}else if(i === 2 && !bAccept){
+							_buttons.push(Markup.button.callback('Принимаю правила', 'apply_rules', false));
+							bAccept = true;
+						}else{
+							_buttons.push(Markup.button.callback(Math.round(1) >= 0.5 ? 'Не принимаю правила' : 'Я бот', 'reject_rules', false));
+						}
 					}
+					
+					//Отправляем сообщение на проверку на SPAM
+					deepseek.isSpamMessage(ctx?.message?.text).then(async res => {
+						if(res){
+							// Просто удаляем пользователя как спамера
+							return removeUserFromChat(ctx, chat, user);
+						}
+					});
+					
+					return sentQuestion(ctx,
+						`${makeName(
+							user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
+						_buttons,
+						20000
+					);
+					
+				}else{
+					// Ну кто начинает "Общение" выкладывая сразу только картинку, видео, аудио или документ? СПАМЕР!!!!
+					
+					// Просто удаляем пользователя как спамера
+					return removeUserFromChat(ctx, chat, user);
 				}
 				
-				deepseek.isSpamMessage(ctx?.message?.text).then(async res => {
-					if(res){
-						// Просто удаляем пользователя как спамера
-						return removeUserFromChat(ctx, chat, user);
-					}
-				});
-				
-				return sentQuestion(ctx,
-					`${makeName(
-						user)}, Вы ещё не подтвердили принятие правил данного чата. Писать сообщения Вы сможете только после того, как примите правила.\n\nПеред тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`,
-					_buttons,
-					20000
-				);
-				
-			}else if(!ctx.message){
-				// Ну кто начинает "Общение" выкладывая сразу только картинку? СПАМЕР!!!!
-				
-				// Просто удаляем пользователя как спамера
-				return removeUserFromChat(ctx, chat, user);
+			}else if(message?.reply_to_message){
+				if(await hasDeepSeekTalkMarker(ctx)){
+					// Продолжаем диалог
+					return deepSeekTalks(ctx);
+				}
 			}
 		}
 	}
@@ -571,7 +672,7 @@ let process_users_handler;
                          JOIN SYSADMIN_CHAT_BOT.MESSAGES M ON UC.USER_ID = M.USER_ID
                 WHERE UC.CHAT_ID = -1001325427983
                   AND UC.NEW_USER
-                  AND NOT UC.ISBLOCKED
+                  AND NOT UC.IS_BLOCKED
                 GROUP BY UC.CHAT_ID, UC.USER_ID
                 HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
                 ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`);
@@ -583,9 +684,9 @@ let process_users_handler;
 					await bot.telegram.banChatMember(user.chat_id, user.user_id);
 					await db.query(`
                         UPDATE SYSADMIN_CHAT_BOT.USERS_CHATS UC
-                        SET isblocked= TRUE
-                        WHERE chat_id = $1::BIGINT
-                          AND user_id = $2::BIGINT;`, [user.chat_id, user.user_id]);
+                        SET IS_BLOCKED= TRUE
+                        WHERE CHAT_ID = $1::BIGINT
+                          AND USER_ID = $2::BIGINT;`, [user.chat_id, user.user_id]);
 				}
 			}
 			
