@@ -44,9 +44,18 @@ const sendMessage = async(ctx, message, isMarkdown) => {
 	try{
 		let msg;
 		if(isMarkdown){
-			msg = await ctx.sendMessage(message, {parse_mode: 'Markdown'});
+			while (message){
+				const mess_to_send = message.substring(0, 9500);
+				message = message.substring(9500);
+				msg = await ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown'});
+			}
+
 		}else{
-			msg = await ctx.sendMessage(message);
+			while (message){
+				const mess_to_send = message.substring(0, 9500);
+				message = message.substring(9500);
+				msg = await ctx.sendMessage(mess_to_send);
+			}
 		}
 		return msg;
 		
@@ -67,9 +76,18 @@ const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 	try{
 		let msg;
 		if(isMarkdown){
-			msg = await ctx.sendMessage(message, {parse_mode: 'Markdown', reply_to_message_id: reply_to});
+			while (message){
+				const mess_to_send = message.substring(0, 9500);
+				message = message.substring(9500);
+				msg = await ctx.sendMessage(mess_to_send, {parse_mode: 'Markdown', reply_to_message_id: reply_to});
+			}
+
 		}else{
-			msg = await ctx.sendMessage(message, {reply_to_message_id: reply_to});
+			while (message){
+				const mess_to_send = message.substring(0, 9500);
+				message = message.substring(9500);
+				msg = await ctx.sendMessage(mess_to_send, {reply_to_message_id: reply_to});
+			}
 		}
 		return msg;
 		
