@@ -366,9 +366,6 @@ const hasDeepSeekTalkMarker = async(ctx) => {
 	if(message && message?.message_id && message?.text){
 		const botInfo = ctx?.botInfo;
 		if(botInfo && botInfo?.is_bot && botInfo?.id){
-			const chat = message.chat;
-			const user = message.from;
-			
 			// Получаем историю сообщений и проверяем наличие команды на диалог с deepseek
 			return !!(await db.query(
 				`
