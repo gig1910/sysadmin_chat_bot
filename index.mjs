@@ -92,6 +92,7 @@ const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 		return msg;
 		
 	}catch(err){
+		logger.warn(`message.length: ${message.length}`).then();
 		logger.warn(err).then();
 	}
 };
