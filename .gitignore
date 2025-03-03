@@ -3,3 +3,4 @@
 /.idea
 /ecosystem.config.js
 /logs/log.txt
+/test/

@@ -24,6 +24,7 @@
   "homepage": "https://github.com/gig1910/sysadmin_chat_bot#readme",
   "dependencies": {
     "circular-json": "^0.5.9",
+    "markdown-it": "^14.1.0",
     "node-fetch": "^3.3.2",
     "openai": "^4.85.4",
     "pg": "^8.11.5",
