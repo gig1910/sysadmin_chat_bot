@@ -65,7 +65,7 @@ export async function sendMessages(messages){
 			logger.log(`Отправка сообщений:"`).then();
 			logger.dir(messages).then();
 			const completion = await openai.chat.completions.create({
-				messages:    [{role: 'system', content: 'Отвечай на русском языке используя разметку `markdown` поддерживаемую мессенджером `telegram`. По-возможности ответ не должен быть более 4000 символов.'}].concat(messages),
+				messages:    [{role: 'system', content: 'Отвечай на русском языке используя разметку `markdown`. Выдавай краткий ответ если иное не уточняется в вопросе.'}].concat(messages),
 				model:       'deepseek-chat',
 				temperature: 1.5,
 			});

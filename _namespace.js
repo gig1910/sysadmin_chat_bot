@@ -320,7 +320,7 @@
  * @method
  * @name CTX#sendMessage
  * @param {String} message
- * @param {{parse_mode?: String, reply_to_message_id?: Number}} [option]
+ * @param {{parse_mode?: String, reply_to_message_id?: Number, entities?: Array}} [option]
  * @async
  * @return {Promise<Message.TextMessage>}
  */

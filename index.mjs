@@ -5,6 +5,7 @@ import * as deepseek from './common/deepseek.mjs';
 
 import * as telegram from './common/telegram.mjs';
 import * as telegram_db from './common/telegram_db.mjs';
+import {parseMessageAndSaveByParts} from "./common/parser.mjs";
 
 //-----------------------------
 
