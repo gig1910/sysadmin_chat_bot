@@ -87,7 +87,7 @@ export async function sendMessages(messages){
 /**
  * Диалог с DeepSeek
  * @param {CTX} ctx
- * @returns {Promise<Message.TextMessage>}
+ * @returns {Promise<[Message.TextMessage]>}
  */
 export const deepSeekTalks = async(ctx) => {
 	const message = ctx?.update?.message || ctx?.update?.edited_message;

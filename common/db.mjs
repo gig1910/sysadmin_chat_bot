@@ -9,12 +9,12 @@ const db_host = (process.env.DB_HOST || '127.0.0.1');
 const db_port = parseInt(process.env.DB_PORT, 10) || 5432;
 const db_name = (process.env.DB_NAME);
 
-if(!db_user) throw new Error('Not defined ENV DB_USER');
-if(!db_pass) throw new Error('Not defined ENV DB_PASS');
-if(!db_name) throw new Error('Not defined ENV DB_NAME');
+if(!db_user){ throw new Error('Not defined ENV DB_USER'); }
+if(!db_pass){ throw new Error('Not defined ENV DB_PASS'); }
+if(!db_name){ throw new Error('Not defined ENV DB_NAME'); }
 
 export async function open_db(){
-	pool = new pg.default.Pool({
+	pool = new pg?.default.Pool({
 		statement_timeout: 100000,
 		user:              db_user,
 		host:              db_host,

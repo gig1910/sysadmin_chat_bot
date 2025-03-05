@@ -1,5 +1,6 @@
-import markdownit from 'markdown-it';
-import image from "markdown-it/lib/rules_inline/image.mjs";
+/* jshint -W083 */
+
+import MarkdownIt from 'markdown-it';
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = parseInt(process.env.TELEGRAM_MAX_MESSAGES_LENGTH, 10) || 4000;
 
@@ -13,7 +14,7 @@ const TELEGRAM_MAX_MESSAGE_LENGTH = parseInt(process.env.TELEGRAM_MAX_MESSAGES_L
 export const parseMessageAndSaveByParts = (message) => {
 	const result = [];
 	
-	const md = markdownit();
+	const md = MarkdownIt();
 	
 	const parsed_message = md.parse(message);
 	

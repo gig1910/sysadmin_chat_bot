@@ -35,7 +35,7 @@ import * as db from './db.mjs';
  * @returns {Promise<*>}
  */
 export const addChat2DB = async chat => db.query(`
-            INSERT INTO SYSADMIN_CHAT_BOT.CHATS(ID, TYPE, TITLE, INVITE_LINK, PERMISSIONS, JOIN_TO_SEND_MESSAGES, MAX_REACTION_COUNT, RAW)
+            INSERT INTO CHATS(ID, TYPE, TITLE, INVITE_LINK, PERMISSIONS, JOIN_TO_SEND_MESSAGES, MAX_REACTION_COUNT, RAW)
             VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
             ON CONFLICT(ID) DO UPDATE SET TYPE=EXCLUDED.TYPE,
                                           TITLE=EXCLUDED.TITLE,
@@ -53,7 +53,7 @@ export const addChat2DB = async chat => db.query(`
  * @returns {Promise<*>}
  */
 export const addUser2DB = async user => db.query(`
-            INSERT INTO SYSADMIN_CHAT_BOT.USERS(ID, USERNAME, FIRST_NAME, LAST_NAME, TYPE, ACTIVE_USERNAMES, BIO, HAS_PRIVATE_FORWARDS, MAX_REACTION_COUNT, RAW)
+            INSERT INTO USERS(ID, USERNAME, FIRST_NAME, LAST_NAME, TYPE, ACTIVE_USERNAMES, BIO, HAS_PRIVATE_FORWARDS, MAX_REACTION_COUNT, RAW)
             VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::TEXT, $5::TEXT, STRING_TO_ARRAY($6::TEXT, ',')::TEXT[], $7::TEXT, $8::BOOL, $9::INT, $10::JSONB)
             ON CONFLICT(ID) DO UPDATE SET USERNAME=EXCLUDED.USERNAME,
                                           FIRST_NAME=EXCLUDED.FIRST_NAME,
@@ -75,7 +75,7 @@ export const addUser2DB = async user => db.query(`
  * @returns {Promise<*>}
  */
 export const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
-            INSERT INTO SYSADMIN_CHAT_BOT.USERS_CHATS(USER_ID, CHAT_ID, NEW_USER)
+            INSERT INTO USERS_CHATS(USER_ID, CHAT_ID, NEW_USER)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BOOL)
             ON CONFLICT(USER_ID, CHAT_ID) DO UPDATE SET NEW_USER=EXCLUDED.NEW_USER;`,
 	[user?.id, chat?.id, bNew]
@@ -89,7 +89,7 @@ export const addUser2Chat2DB = async(chat, user, bNew) => db.query(`
  */
 export const removeUserFromChat2DB = async(chat_id, user_id) => db.query(`
             DELETE
-            FROM SYSADMIN_CHAT_BOT.USERS_CHATS
+            FROM USERS_CHATS
             WHERE USER_ID = $1::BIGINT
               AND CHAT_ID = $2::BIGINT`,
 	[user_id, chat_id]
@@ -105,7 +105,7 @@ export const getUserStateFromChat = async(chat, user) => {
 	/** @type {{rows:[{new_user: Boolean, is_blocked: Boolean}]}} */
 	const res = await db.query(
 		`SELECT NEW_USER, IS_BLOCKED
-         FROM SYSADMIN_CHAT_BOT.USERS_CHATS
+         FROM USERS_CHATS
          WHERE USER_ID = $1::BIGINT
            AND CHAT_ID = $2::BIGINT;`,
 		[user?.id, chat?.id]
@@ -125,7 +125,7 @@ export const getUserStateFromChat = async(chat, user) => {
  * @returns {Promise<*>}
  */
 export const addMessage2DB = async(ctx, chat, user, message) => db.query(`
-            INSERT INTO SYSADMIN_CHAT_BOT.MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
+            INSERT INTO MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, ($5::JSONB - 'telegram'))
             ON CONFLICT DO NOTHING;`,
 	[message?.message_id, chat?.id, user?.id, CircularJSON.stringify(message), CircularJSON.stringify(ctx)]);
@@ -142,7 +142,7 @@ export const getMessagesReplyLink = async(bot_id, from_message_id) => (await db.
                                                                                           M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
                                                                                           (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
                                                                                           M.TIMESTAMP                                                AS TS
-                                                                                   FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                   FROM MESSAGES M
                                                                                    WHERE M.MESSAGE_ID = $1::BIGINT
                                                                                    UNION
                                                                                    SELECT M.MESSAGE_ID,
@@ -150,11 +150,11 @@ export const getMessagesReplyLink = async(bot_id, from_message_id) => (await db.
                                                                                           M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
                                                                                           (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
                                                                                           M.TIMESTAMP                                                AS TS
-                                                                                   FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                   FROM MESSAGES M
                                                                                             JOIN MESSAGES MM ON M.MESSAGE_ID = MM.REPLY_ID)
      SELECT M.USER_ID, U.USERNAME, M.MESSAGE_TEXT
      FROM MESSAGES M
-              JOIN SYSADMIN_CHAT_BOT.USERS U ON M.USER_ID = U.ID
+              JOIN USERS U ON M.USER_ID = U.ID
      ORDER BY TS
      LIMIT 20;`, [from_message_id]))?.rows?.map(row => {
 	if(row){
@@ -183,7 +183,7 @@ export const hasDeepSeekTalkMarker = async(from_message_id) => !!(await db.query
                                                                                                                  M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
                                                                                                                  (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
                                                                                                                  M.TIMESTAMP                                                AS TS
-                                                                                                          FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                                          FROM MESSAGES M
                                                                                                           WHERE M.MESSAGE_ID = $1::BIGINT
                                                                                                           UNION
                                                                                                           SELECT M.MESSAGE_ID,
@@ -191,7 +191,7 @@ export const hasDeepSeekTalkMarker = async(from_message_id) => !!(await db.query
                                                                                                                  M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
                                                                                                                  (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
                                                                                                                  M.TIMESTAMP                                                AS TS
-                                                                                                          FROM SYSADMIN_CHAT_BOT.MESSAGES M
+                                                                                                          FROM MESSAGES M
                                                                                                                    JOIN MESSAGES MM ON M.MESSAGE_ID = MM.REPLY_ID)
                             SELECT *
                             FROM MESSAGES
@@ -200,12 +200,12 @@ export const hasDeepSeekTalkMarker = async(from_message_id) => !!(await db.query
                       WHERE UPPER(SUBSTRING(MESSAGE_TEXT FROM 1 FOR 9)) = '/DEEPSEEK');`, [from_message_id]))?.rows[0].exists;
 
 export const getUsers = async(chat_id) => db.query(`
-                SELECT UC.CHAT_ID, UC.USER_ID
-                FROM SYSADMIN_CHAT_BOT.USERS_CHATS UC
-                         JOIN SYSADMIN_CHAT_BOT.MESSAGES M ON UC.USER_ID = M.USER_ID
-                WHERE UC.CHAT_ID = $1::BIGINT
-                  AND UC.NEW_USER
-                  AND NOT UC.IS_BLOCKED
-                GROUP BY UC.CHAT_ID, UC.USER_ID
-                HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
-                ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`, [chat_id]);
+    SELECT UC.CHAT_ID, UC.USER_ID
+    FROM USERS_CHATS UC
+             JOIN MESSAGES M ON UC.USER_ID = M.USER_ID
+    WHERE UC.CHAT_ID = $1::BIGINT
+      AND UC.NEW_USER
+      AND NOT UC.IS_BLOCKED
+    GROUP BY UC.CHAT_ID, UC.USER_ID
+    HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
+    ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`, [chat_id]);

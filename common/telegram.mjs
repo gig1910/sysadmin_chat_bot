@@ -43,7 +43,7 @@ export const sendMessage = async(ctx, message, isMarkdown) => {
 	try{
 		const msg = [];
 		if(isMarkdown){
-			parseMessageAndSaveByParts(ctx, message)?.forEach((message) => {
+			parseMessageAndSaveByParts(message)?.forEach((message) => {
 				if(message?.message){
 					msg.push(ctx.sendMessage(message.message, {entities: message?.entities}));
 				}
@@ -76,7 +76,7 @@ export const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 		const msg = [];
 		
 		if(isMarkdown){
-			parseMessageAndSaveByParts(message).forEach((message) => {
+			parseMessageAndSaveByParts(message)?.forEach((message) => {
 				if(message?.message){
 					msg.push(ctx.sendMessage(message.message, {entities: message?.entities, reply_to_message_id: reply_to}));
 				}
@@ -102,8 +102,8 @@ export const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
  * @param {CTX}      ctx
  * @param {String}   message
  * @param {Boolean} [isMarkdown=false]
- * @param {Number}  [timeout=1000]
- * @return {Promise<Message.TextMessage>}
+ * @param {Number}  [timeout=TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE]
+ * @return {Promise<[Message.TextMessage]>}
  */
 export const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
 	const msg = sendMessage(ctx, message, isMarkdown);
@@ -121,10 +121,9 @@ export const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
  * @param {CTX}      ctx
  * @param {String}   question
  * @param {Array}    buttons
- * @param {Number}  [timeout=1000]
  * @return {Promise<Message.TextMessage>}
  */
-export const sentQuestion = async(ctx, question, buttons, timeout) => {
+export const sentQuestion = async(ctx, question, buttons) => {
 	return ctx.reply(
 		question,
 		Markup.inlineKeyboard([buttons]).oneTime().resize()
@@ -179,9 +178,9 @@ export const sendNewUserQuestion = async(ctx, user) => {
 
 /**
  * @param {?CTX} ctx
- * @param {Chat} chat
- * @param {User} user
- * @returns {Promise<Message.TextMessage>}
+ * @param {Chat|{id: Number}} chat
+ * @param {User|{id: Number}} user
+ * @returns {Promise<[Message.TextMessage]>}
  */
 export const removeUserFromChat = async(ctx, chat, user) => {
 	logger.info(`Blocked user ${user?.id} in chat ${chat?.id}...`).then();

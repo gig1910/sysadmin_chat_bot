@@ -6,7 +6,7 @@ let log_file = './logs/log.txt';
 
 /**
  * Установка уровня логгирования
- * @param {Number} [logLev=1]
+ * @param {Number|String} [logLev=1]
  * @public
  * @export
  */
@@ -16,14 +16,15 @@ export function setLogLev(logLev){
 }
 
 /**
- * Установка имено лог файла
+ * Установка имени лог файла
  * @param {String} fileName
  * @public
  * @export
+ * @async
  */
 export async function setLogFile(fileName){
-	log_file = typeof (fileName) === 'string'
-	           ? fileName || `log_${(new Date()).toISOString().substring(0, 19).replace('T', '_')}.txt`
+	log_file = typeof (fileName) === 'string' ?
+	             fileName || `log_${(new Date()).toISOString().substring(0, 19).replace('T', '_')}.txt`
 	           : `log_${(new Date()).toISOString().substring(0, 19).replace('T', '_')}.txt`;
 	
 	console.info(`Установлен лог-файл: ${fileName}`);
@@ -50,7 +51,7 @@ async function fileAccess(fileName){
 		
 	}catch(err){
 		// console.info(err); // Ошибка проверки существования файла - значит его нет
-		return false
+		return false;
 	}
 }
 
@@ -109,11 +110,11 @@ function getBaseFileName(fileName){
 }
 
 /**
- * Функция ротации логов. Все логи и одинаковым именем переименовываются с добавление цифрвого постфикса. В порялке возрастания.
- * Если есть пересечение по имени, то происходил цепочечное переименоывание
- * @param {String} fileName
- * @param {?Number} [index]
- * @param {?String} [baseFileName]
+ * Функция ротации логов. Все логи и одинаковым именем переименовываются с добавлением цифрового постфикса. В порядке возрастания.
+ * Если есть пересечение по имени, то происходил цепочечное переименовывание
+ * @param {String}           fileName
+ * @param {?Number/?String} [index]
+ * @param {?String}         [baseFileName]
  * @returns {Promise<Boolean>}
  */
 async function rotateFileLogName(fileName, index, baseFileName){
@@ -148,7 +149,7 @@ async function write2LogFile(message){
 		console.error(err);
 		
 	}finally{
-		_fd && _fd.close();
+		_fd?.close();
 	}
 }
 
@@ -214,7 +215,7 @@ export async function dir(obj){
 }
 
 setLogLev(log_lev);
-await setLogFile(log_file);
+(async () => await setLogFile(log_file) )();
 
 export default {
 	setLogFile: setLogFile,
@@ -227,4 +228,4 @@ export default {
 	trace1:     trace1,
 	trace2:     trace2,
 	dir:        dir
-}
+};

@@ -5,7 +5,6 @@ import * as deepseek from './common/deepseek.mjs';
 
 import * as telegram from './common/telegram.mjs';
 import * as telegram_db from './common/telegram_db.mjs';
-import {parseMessageAndSaveByParts} from "./common/parser.mjs";
 
 //-----------------------------
 
@@ -18,11 +17,11 @@ telegram.bot.onerror = err => {
 	logger.dir(err).then();
 };
 
-telegram.bot.start(/** @param {CTX} ctx */ async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Welcome'));
+telegram.bot.start(async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Welcome'));
 
-telegram.bot.help(/** @param {CTX} ctx */ async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Bot for telergam SysAdminChat'));
+telegram.bot.help(async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Bot for telergam SysAdminChat'));
 
-telegram.bot.command('getchatid', /** @param {CTX} ctx */ async(ctx) => {
+telegram.bot.command('getchatid', async(ctx) => {
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
 		/** @type {Chat} */ const chat = message?.chat;
@@ -36,7 +35,7 @@ telegram.bot.command('getchatid', /** @param {CTX} ctx */ async(ctx) => {
 	}
 });
 
-telegram.bot.command('question', /** @param {CTX} ctx */ async(ctx) => {
+telegram.bot.command('question', async(ctx) => {
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
 		telegram.deleteMessage(ctx, message?.message_id).then(); // Удаляем командное сообщение
@@ -70,7 +69,7 @@ telegram.bot.command('question', /** @param {CTX} ctx */ async(ctx) => {
 	}
 });
 
-telegram.bot.command('deepseek_test_spam', /** @param {CTX} ctx */ async(ctx) => {
+telegram.bot.command('deepseek_test_spam', async(ctx) => {
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message && message.message_id && message?.text){
 		const arr = (/\/deepseek_test_spam (.*)/gmi).exec(message.text.replace(/\s+/igm, ' '));
@@ -83,9 +82,9 @@ telegram.bot.command('deepseek_test_spam', /** @param {CTX} ctx */ async(ctx) =>
 	}
 });
 
-telegram.bot.command('deepseek', /** @param {CTX} ctx */ async(ctx) => { deepseek.deepSeekTalks(ctx).then(); });
+telegram.bot.command('deepseek', async(ctx) => { deepseek.deepSeekTalks(ctx).then(); });
 
-telegram.bot.action('apply_rules', /** @param {CTX} ctx */ async(ctx) => {
+telegram.bot.action('apply_rules', async(ctx) => {
 	const message = ctx?.update?.callback_query?.message;
 	if(message){
 		const chat = message.chat;
@@ -110,7 +109,7 @@ telegram.bot.action('apply_rules', /** @param {CTX} ctx */ async(ctx) => {
 	}
 });
 
-telegram.bot.on('new_chat_members', /** @param {CTX} ctx */ async(ctx) => {
+telegram.bot.on('new_chat_members', async(ctx) => {
 	const arr = [];
 	
 	for(let i = 0; i < ctx?.message?.new_chat_members; i++){
@@ -121,7 +120,7 @@ telegram.bot.on('new_chat_members', /** @param {CTX} ctx */ async(ctx) => {
 	await Promise.all(arr);
 });
 
-telegram.bot.on('left_chat_member', /** @param {CTX} ctx */ async(ctx) => {
+telegram.bot.on('left_chat_member', async(ctx) => {
 	const arr = [];
 	logger.log('left_chat_member').then();
 	
@@ -162,7 +161,7 @@ telegram.bot.on([
 	'text', 'message', 'edited_message', 'sticker', 'animation', 'audio', 'document', 'photo', 'video', 'video_note', 'voice',
 	'channel_post', 'chat_member', 'chosen_inline_result', 'edited_channel_post', 'message_reaction', 'message_reaction_count',
 	'my_chat_member', 'chat_join_request', 'contact', 'dice', 'location', 'users_shared', 'chat_shared'
-], /** @param {CTX} ctx */ async(ctx) => {
+], async(ctx) => {
 	logger.log('chat message').then();
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message && message.message_id){
