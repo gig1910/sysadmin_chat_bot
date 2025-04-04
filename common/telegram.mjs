@@ -39,7 +39,7 @@ export const deleteMessage = async(ctx, msg_id) => {
  * @param {Boolean} [isMarkdown = false]
  * @returns {Promise<[Message.TextMessage]>}
  */
-export const sendMessage = async(ctx, message, isMarkdown) => {
+export const sendMessage = (ctx, message, isMarkdown) => {
 	try{
 		const msg = [];
 		if(isMarkdown){
@@ -109,8 +109,10 @@ export const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
 	const msg = sendMessage(ctx, message, isMarkdown);
 	
 	setTimeout(((ctx, msg) => async() => {
-		msg = await msg;
-		return deleteMessage(ctx, msg?.message_id);
+		msg = await Promise.all(msg);
+		const res = [];
+		msg.forEach(msg => res.push(deleteMessage(ctx, msg?.message_id)));
+		return res;
 	})(ctx, msg), timeout || TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE);
 	
 	return msg;

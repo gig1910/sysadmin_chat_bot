@@ -14,7 +14,7 @@ if(!db_pass){ throw new Error('Not defined ENV DB_PASS'); }
 if(!db_name){ throw new Error('Not defined ENV DB_NAME'); }
 
 export async function open_db(){
-	pool = new pg?.default.Pool({
+	pool = new pg.default.Pool({
 		statement_timeout: 100000,
 		user:              db_user,
 		host:              db_host,
