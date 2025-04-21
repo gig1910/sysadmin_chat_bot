@@ -219,7 +219,7 @@ telegram.bot.on([
 				}
 				
 			}else if(message?.reply_to_message){
-				if(await telegram_db.hasDeepSeekTalkMarker(message?.reply_to_message?.message_id)){
+				if(await telegram_db.hasDeepSeekTalkMarker(message.chat?.id,  message?.reply_to_message?.message_id)){
 					// Продолжаем диалог
 					return deepseek.deepSeekTalks(ctx);
 				}

@@ -101,7 +101,7 @@ export const deepSeekTalks = async(ctx) => {
 			await telegram_db.addMessage2DB(ctx, chat, user, message);
 			
 			// Получаем историю сообщений
-			const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, message.message_id);
+			const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, message.chat?.id, message.message_id);
 			
 			if(messages?.length > 0){
 				// Запрашиваем ответ у DeepSeek
@@ -111,16 +111,10 @@ export const deepSeekTalks = async(ctx) => {
 					let mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
 					Promise.all(mess).then(mess => {
 						mess?.forEach(m => {
-							if(m?.length > 0){
-								Promise.all(m).then(m => {
-									m.forEach(m => {
-										if(m?.message_id){
-											ctx.update.message = m;
-											//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-											telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-										}
-									});
-								});
+							if(m?.message_id){
+								ctx.update.message = m;
+								//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
+								telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
 							}
 						});
 					});

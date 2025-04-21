@@ -133,30 +133,34 @@ export const addMessage2DB = async(ctx, chat, user, message) => db.query(`
 /**
  * Получаем историю сообщений по связке "ответ на" начиная с переданного id
  * @param {Number} bot_id
+ * @param {Number} chat_id
  * @param {Number} from_message_id
  * @returns {Promise<[{role: String, content: String}]>}
  */
-export const getMessagesReplyLink = async(bot_id, from_message_id) => (await db.query(
-	`WITH RECURSIVE MESSAGES (MESSAGE_ID, USER_ID, MESSAGE_TEXT, REPLY_ID, TS) AS (SELECT M.MESSAGE_ID,
-                                                                                          (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
-                                                                                          M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
-                                                                                          (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
-                                                                                          M.TIMESTAMP                                                AS TS
-                                                                                   FROM MESSAGES M
-                                                                                   WHERE M.MESSAGE_ID = $1::BIGINT
-                                                                                   UNION
-                                                                                   SELECT M.MESSAGE_ID,
-                                                                                          (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
-                                                                                          M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
-                                                                                          (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
-                                                                                          M.TIMESTAMP                                                AS TS
-                                                                                   FROM MESSAGES M
-                                                                                            JOIN MESSAGES MM ON M.MESSAGE_ID = MM.REPLY_ID)
+export const getMessagesReplyLink = async(bot_id, chat_id, from_message_id) => (await db.query(
+	`WITH RECURSIVE MESS AS (SELECT M.CHAT_ID,
+                                    M.MESSAGE_ID,
+                                    (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                    M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                    (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                    M.TIMESTAMP                                                AS TS
+                             FROM MESSAGES M
+                             WHERE M.MESSAGE_ID = $1::BIGINT
+                               AND M.CHAT_ID = $2::BIGINT
+                             UNION
+                             SELECT M.CHAT_ID,
+                                    M.MESSAGE_ID,
+                                    (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                    M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                    (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                    M.TIMESTAMP                                                AS TS
+                             FROM MESSAGES M
+                                      JOIN MESS MM ON M.MESSAGE_ID = MM.REPLY_ID AND M.CHAT_ID = MM.CHAT_ID)
      SELECT M.USER_ID, U.USERNAME, M.MESSAGE_TEXT
-     FROM MESSAGES M
+     FROM MESS M
               JOIN USERS U ON M.USER_ID = U.ID
-     ORDER BY TS
-     LIMIT 20;`, [from_message_id]))?.rows?.map(row => {
+     ORDER BY M.TS
+     LIMIT 20;`, [from_message_id, chat_id]))?.rows?.map(row => {
 	if(row){
 		// Отрезаем командный текст, если он есть
 		const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
@@ -172,32 +176,35 @@ export const getMessagesReplyLink = async(bot_id, from_message_id) => (await db.
 
 /**
  * Проверка, что ответ на сообщение был на цепочку сообщений общения с DeepSeek
+ * @param {Number} chat_id
  * @param {Number} from_message_id
  * @returns {Promise<Boolean>}
  */
-export const hasDeepSeekTalkMarker = async(from_message_id) => !!(await db.query(
-	`
-        SELECT EXISTS(SELECT *
-                      FROM (WITH RECURSIVE MESSAGES (MESSAGE_ID, USER_ID, MESSAGE_TEXT, REPLY_ID, TS) AS (SELECT M.MESSAGE_ID,
-                                                                                                                 (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
-                                                                                                                 M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
-                                                                                                                 (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
-                                                                                                                 M.TIMESTAMP                                                AS TS
-                                                                                                          FROM MESSAGES M
-                                                                                                          WHERE M.MESSAGE_ID = $1::BIGINT
-                                                                                                          UNION
-                                                                                                          SELECT M.MESSAGE_ID,
-                                                                                                                 (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
-                                                                                                                 M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
-                                                                                                                 (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
-                                                                                                                 M.TIMESTAMP                                                AS TS
-                                                                                                          FROM MESSAGES M
-                                                                                                                   JOIN MESSAGES MM ON M.MESSAGE_ID = MM.REPLY_ID)
-                            SELECT *
-                            FROM MESSAGES
-                            ORDER BY TS
-                            LIMIT 20) _
-                      WHERE UPPER(SUBSTRING(MESSAGE_TEXT FROM 1 FOR 9)) = '/DEEPSEEK');`, [from_message_id]))?.rows[0].exists;
+export const hasDeepSeekTalkMarker = async(chat_id, from_message_id) => !!(await db.query(
+	`SELECT EXISTS(SELECT *
+                   FROM (WITH RECURSIVE MESS AS (SELECT M.CHAT_ID,
+                                                        M.MESSAGE_ID,
+                                                        (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                                        M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                                        (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                                        M.TIMESTAMP                                                AS TS
+                                                 FROM MESSAGES M
+                                                 WHERE M.MESSAGE_ID = $1::BIGINT
+                                                   AND M.CHAT_ID = $2::BIGINT
+                                                 UNION
+                                                 SELECT M.CHAT_ID,
+                                                        M.MESSAGE_ID,
+                                                        (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
+                                                        M.MESSAGE ->> 'text'                                       AS MESSAGE_TEXT,
+                                                        (M.MESSAGE -> 'reply_to_message' ->> 'message_id')::BIGINT AS REPLY_ID,
+                                                        M.TIMESTAMP                                                AS TS
+                                                 FROM MESSAGES M
+                                                          JOIN MESS MM ON M.MESSAGE_ID = MM.REPLY_ID AND M.CHAT_ID = MM.CHAT_ID)
+                         SELECT *
+                         FROM MESS
+                         ORDER BY TS
+                         LIMIT 20) _
+                   WHERE UPPER(SUBSTRING(MESSAGE_TEXT FROM 1 FOR 9)) = '/DEEPSEEK');`, [from_message_id, chat_id]))?.rows[0].exists;
 
 export const getUsers = async(chat_id) => db.query(`
     SELECT UC.CHAT_ID, UC.USER_ID
