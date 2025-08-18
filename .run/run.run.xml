@@ -1,0 +1,18 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="run" type="NodeJSConfigurationType" path-to-node="$USER_HOME$/.nvm/versions/node/v20.19.4/bin/node" path-to-js-file="index.mjs" working-dir="$PROJECT_DIR$">
+    <envs>
+      <env name="API_KEY" value="AIzaSyD_OoA_pQ-b7rNbCL4e1_VtVPZYkU4eYxY" />
+      <env name="DB_HOST" value="vps.kulikow.ru" />
+      <env name="DB_NAME" value="telegram" />
+      <env name="DB_PASS" value="gfhjkm01" />
+      <env name="DB_USER" value="sysadmin_chat_bot" />
+      <env name="DEEPSEEK_API_KEY" value="sk-0b2673fd3cae4580873d6cd4aefef96c" />
+      <env name="OPENAI_API_KEY" value="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" />
+      <env name="TELEGRAM_MAX_MESSAGE_LENGTH" value="4000" />
+      <env name="TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE" value="10000" />
+      <env name="TELEGRAM_TIMEOUT_TO_DELETE_QUESTION" value="10000" />
+      <env name="TOKEN" value="7519307871:AAFW5IFI8fksquVFMyXxEHM8wzlVnjPFF3A" />
+    </envs>
+    <method v="2" />
+  </configuration>
+</component>

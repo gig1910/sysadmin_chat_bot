@@ -1,12 +1,14 @@
 import {Markup, Telegraf} from 'telegraf';
-import * as logger from './logger.mjs';
-import * as telegram_db from "./telegram_db.mjs";
+import * as logger        from './logger.mjs';
 import {parseMessageAndSaveByParts} from './parser.mjs';
+import * as telegram_db   from "./telegram_db.mjs";
 //----------------------------------
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 10000;
 const TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE = parseInt(process.env.TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE, 10) || 10000;
 const TELEGRAM_TIMEOUT_TO_DELETE_QUESTION = parseInt(process.env.TELEGRAM_TIMEOUT_TO_DELETE_QUESTION, 10) || 60000;
+
+if(!process.env.TOKEN){ throw new Error('Not defined ENV BOT TOKEN'); }
 
 export const bot = new Telegraf(process.env.TOKEN);
 
@@ -92,6 +94,36 @@ export const replyMessage = async(ctx, reply_to, message, isMarkdown) => {
 		
 		return msg;
 		
+	}catch(err){
+		logger.warn(err).then();
+	}
+};
+
+/**
+ * Отправка сообщений
+ * @param {CTX}      ctx
+ * @param {Number}   chat_id
+ * @param {Number}   message_id
+ * @param {String}   message
+ * @param {Boolean} [isMarkdown = false]
+ * @returns {Promise<[Message.TextMessage]>}
+ */
+export const editMessage = (ctx, chat_id, message_id, message, isMarkdown) => {
+	try{
+		const msg = [];
+		if(isMarkdown){
+			logger.warn('Редактирование возможно только одного сообщения, без парсинга').then();
+			/*parseMessageAndSaveByParts(message)?.forEach((message) => {
+				if(message?.message){
+					msg.push(ctx.sendMessage(message.message, {entities: message?.entities}));
+				}
+			});*/
+
+		}else{
+			message            = message.substring(0, TELEGRAM_MAX_MESSAGE_LENGTH);
+			return ctx.telegram.editMessageText(chat_id, message_id, undefined, message);
+		}
+
 	}catch(err){
 		logger.warn(err).then();
 	}

@@ -3,13 +3,28 @@ import logger from "./logger.mjs";
 import * as telegram from "./telegram.mjs";
 import * as telegram_db from "./telegram_db.mjs";
 
-const openai = new OpenAI({
-	baseURL: 'https://api.deepseek.com',
-	apiKey:  process.env.DEEPSEEK_API_KEY,
-	timeout: 10 * 60 * 1000, // 10 минут
-});
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
+let openai;
+if(DEEPSEEK_API_KEY){
+	openai = new OpenAI({
+		baseURL: 'https://api.deepseek.com',
+		apiKey:  process.env.DEEPSEEK_API_KEY,
+		timeout: 10 * 60 * 1000, // 10 минут
+	});
+}
+
+/**
+ * Тест сообщения на SPAM
+ * @param {String} message
+ * @returns {Promise<Boolean>}
+ */
 export async function isSpamMessage(message){
+	if(!openai) {
+		logger.warn('DeepSeek API key is not set').then();
+		return false;
+	}
+
 	try{
 		// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
 		
@@ -35,7 +50,17 @@ export async function isSpamMessage(message){
 	}
 }
 
+/**
+ *
+ * @param {String} message
+ * @returns {Promise<?String>}
+ */
 export async function testMessage(message){
+	if(!openai) {
+		logger.warn('DeepSeek API key is not set').then();
+		return null;
+	}
+
 	try{
 		// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
 		
@@ -59,7 +84,17 @@ export async function testMessage(message){
 	}
 }
 
+/**
+ * Отправка сообщения в DeepSeek
+ * @param {Object} messages
+ * @returns {Promise<Object>}
+ */
 export async function sendMessages(messages){
+	if(!openai) {
+		logger.warn('DeepSeek API key is not set').then();
+		return null;
+	}
+
 	if(messages?.length > 0){
 		try{
 			logger.log(`Отправка сообщений:"`).then();
@@ -90,6 +125,11 @@ export async function sendMessages(messages){
  * @returns {Promise<[Message.TextMessage]>}
  */
 export const deepSeekTalks = async(ctx) => {
+	if(!openai) {
+		logger.warn('DeepSeek API key is not set').then();
+		return null;
+	}
+
 	const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message && message?.message_id && message?.text){
 		const botInfo = ctx?.botInfo;
@@ -105,7 +145,30 @@ export const deepSeekTalks = async(ctx) => {
 			
 			if(messages?.length > 0){
 				// Запрашиваем ответ у DeepSeek
+
+				// Уведомляем что получили запрос и начали готовить ответ
+				let _symb = `🔃️`;
+				const _mess = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
+				const updater_handler   = setInterval(async () => {
+					const mess_id = (await _mess[0])?.message_id;
+					switch(_symb){
+						case '🔃️': _symb = '🔄'; break;
+						default: _symb = '🔃️'; break;
+					}
+					return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
+				}, 500);
+
 				const answer = await sendMessages(messages);
+
+				// Останавливаем обновление сообщения
+				clearInterval(updater_handler);
+
+				// Удаляем уведомление о подготовке ответа
+				for(let i=0; i<_mess?.length; i++){
+					const mess_id = (await _mess[i])?.message_id;
+					telegram.deleteMessage(ctx, mess_id).then();
+				}
+
 				if(answer){
 					// Отправляем ответ DeepSeek как ответ на сообщение
 					let mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
@@ -121,6 +184,9 @@ export const deepSeekTalks = async(ctx) => {
 					
 					return mess;
 				}
+
+			}else{
+				logger.warn('Нет сообщений на отправку в DeepSeek').then();
 			}
 		}
 	}
