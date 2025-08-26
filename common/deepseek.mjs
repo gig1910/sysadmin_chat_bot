@@ -1,5 +1,5 @@
-import OpenAI from "openai";
-import logger from "./logger.mjs";
+import OpenAI        from "openai";
+import logger        from "./logger.mjs";
 import * as telegram from "./telegram.mjs";
 import * as telegram_db from "./telegram_db.mjs";
 
@@ -100,7 +100,10 @@ export async function sendMessages(messages){
 			logger.log(`Отправка сообщений:"`).then();
 			logger.dir(messages).then();
 			const completion = await openai.chat.completions.create({
-				messages:    [{role: 'system', content: 'Отвечай на русском языке используя разметку `markdown`. Выдавай краткий ответ если иное не уточняется в вопросе.'}].concat(messages),
+				messages: [{
+					role:    'system',
+					content: 'Отвечай на русском языке используя разметку `markdown`. Выдавай краткий ответ если иное не уточняется в вопросе. Не выдумывай, используй только проверенные источники информации. Если есть сомнения в вопросе или ответе - задавай уточняющие вопросы.'
+				}].concat(messages),
 				model:       'deepseek-chat',
 				temperature: 1.5,
 			});
@@ -132,61 +135,84 @@ export const deepSeekTalks = async(ctx) => {
 
 	const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message && message?.message_id && message?.text){
+		// Очистка запроса от текста команды
 		const botInfo = ctx?.botInfo;
 		if(botInfo && botInfo?.is_bot && botInfo?.id){
 			const chat = message.chat;
 			const user = message.from;
-			
-			// Сохраняем сообщение (Тут надо дождаться что бы из БД получить сразу весь диалог, включая ЭТО сообщение)
-			await telegram_db.addMessage2DB(ctx, chat, user, message);
-			
-			// Получаем историю сообщений
-			const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, message.chat?.id, message.message_id);
-			
-			if(messages?.length > 0){
-				// Запрашиваем ответ у DeepSeek
 
-				// Уведомляем что получили запрос и начали готовить ответ
-				let _symb = `🔃️`;
-				const _mess = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
-				const updater_handler   = setInterval(async () => {
-					const mess_id = (await _mess[0])?.message_id;
-					switch(_symb){
-						case '🔃️': _symb = '🔄'; break;
-						default: _symb = '🔃️'; break;
+			const text = message.text.replace(/^\/deepseek(?:@\w+)?\s*/igm, '').trim();
+			if(text){
+
+				// Сохраняем сообщение (Тут надо дождаться что бы из БД получить сразу весь диалог, включая ЭТО сообщение)
+				await telegram_db.addMessage2DB(ctx, chat, user, message);
+
+				// Получаем историю сообщений
+				const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, message.chat?.id, message.message_id);
+
+				if(messages?.length > 0){
+					// Запрашиваем ответ у DeepSeek
+
+					// Уведомляем что получили запрос и начали готовить ответ
+					let _symb             = `🔃️`;
+					const _mess           = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
+					const updater_handler = setInterval(async() => {
+						const mess_id = (await _mess[0])?.message_id;
+						switch(_symb){
+							case '🔃️':
+								_symb = '🔄';
+								break;
+							default:
+								_symb = '🔃️';
+								break;
+						}
+						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
+					}, 2000);
+
+					const answer = await sendMessages(messages);
+
+					// Останавливаем обновление сообщения
+					clearInterval(updater_handler);
+
+					// Удаляем уведомление о подготовке ответа
+					for(let i = 0; i < _mess?.length; i++){
+						const mess_id = (await _mess[i])?.message_id;
+						telegram.deleteMessage(ctx, mess_id).then();
 					}
-					return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
-				}, 500);
 
-				const answer = await sendMessages(messages);
-
-				// Останавливаем обновление сообщения
-				clearInterval(updater_handler);
-
-				// Удаляем уведомление о подготовке ответа
-				for(let i=0; i<_mess?.length; i++){
-					const mess_id = (await _mess[i])?.message_id;
-					telegram.deleteMessage(ctx, mess_id).then();
-				}
-
-				if(answer){
-					// Отправляем ответ DeepSeek как ответ на сообщение
-					let mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
-					Promise.all(mess).then(mess => {
-						mess?.forEach(m => {
-							if(m?.message_id){
-								ctx.update.message = m;
-								//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-								telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-							}
+					if(answer){
+						// Отправляем ответ DeepSeek как ответ на сообщение
+						let mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
+						Promise.all(mess).then(mess => {
+							mess?.forEach(m => {
+								if(m?.message_id){
+									ctx.update.message = m;
+									//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
+									telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
+								}
+							});
 						});
-					});
-					
-					return mess;
+
+						return mess;
+					}
+
+				}else{
+					logger.warn('Нет сообщений на отправку в DeepSeek').then();
 				}
 
 			}else{
-				logger.warn('Нет сообщений на отправку в DeepSeek').then();
+				let mess = await telegram.replyMessage(ctx, message?.message_id, 'Привет, я бот-помошник.\n\nЯ могу попробовать ответить на твой вопрос, но для этого Вы должны его задать используя или ответ на это сообщение, или используя формат `/deepseek ВОПРОС`\n\nВы так же можете давать ответ на сообщение в цепочке обсуждения которого есть вопрос ко мне, я тогда проанализирую всю цепочку вопросов-ответов и выдам более релевантный результат.', true);
+				Promise.all(mess).then(mess => {
+					mess?.forEach(m => {
+						if(m?.message_id){
+							ctx.update.message = m;
+							//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
+							telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
+						}
+					});
+				});
+
+				return mess;
 			}
 		}
 	}
