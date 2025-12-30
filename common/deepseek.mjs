@@ -1,7 +1,8 @@
-import OpenAI        from "openai";
-import logger        from "./logger.mjs";
+import OpenAI from "openai";
+import logger from "./logger.mjs";
 import * as telegram from "./telegram.mjs";
 import * as telegram_db from "./telegram_db.mjs";
+import {query} from "./db.mjs";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -13,6 +14,12 @@ if(DEEPSEEK_API_KEY){
 		timeout: 10 * 60 * 1000, // 10 минут
 	});
 }
+
+const IS_SPAM = 1;
+const IS_MESSAGE = 2;
+const IS_TEST_MESSAGE = 3;
+const AI_MODEL_REASONER = 1;
+const AI_MODEL_CHAT = 2;
 
 /**
  * Тест сообщения на SPAM
@@ -29,19 +36,32 @@ export async function isSpamMessage(message){
 		// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
 		
 		logger.log(`Тест сообщения на спам "${message}"`).then();
-		
+		const _messages = [{
+			role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
+		}, {
+			role: 'user', content: message
+		}];
+		const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+                                  SELECT ID
+                                  FROM INS;`,
+			[JSON.stringify(_messages, null, ''), IS_SPAM, AI_MODEL_REASONER]
+		))?.rows?.[0]?.id;
+		logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
+
 		const completion = await openai.chat.completions.create({
-			messages: [{
-				role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
-			}, {
-				role: 'user', content: message
-			}],
+			messages: _messages,
 			model:    'deepseek-reasoner',
 		});
-		
-		logger.log(completion.choices[0].message.content).then();
-		
-		return completion.choices[0].message.content.toUpperCase().includes('YES');
+
+		const _answer = completion.choices[0].message;
+		await query(`UPDATE AI_REQUEST
+                     SET ANSWER           = $1::JSONB,
+                         ANSWER_TIMESTAMP = NOW()
+                     WHERE ID = $2::INT;`, [JSON.stringify(_answer, null, ''), _id]
+		);
+		logger.log(_answer).then();
+
+		return _answer?.content?.toUpperCase().includes('YES');
 		
 	}catch(err){
 		logger.err(err).then();
@@ -63,19 +83,34 @@ export async function testMessage(message){
 
 	try{
 		// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
-		
-		logger.log(`Тест сообщения на спам "${message}"`).then();
+
+		const _messages = [{
+			role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
+		}, {
+			role: 'user', content: message
+		}];
+		const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+                                  SELECT ID
+                                  FROM INS;`,
+				[JSON.stringify(_messages, null, ''), IS_TEST_MESSAGE, AI_MODEL_REASONER])
+		)?.rows?.[0]?.id;
+		logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
+
 		const completion = await openai.chat.completions.create({
-			messages:    [{
-				role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
-			}, {
-				role: 'user', content: message
-			}],
-			model:       'deepseek-chat',
-			temperature: 1.3,
+			messages: _messages,
+			model: 'deepseek-reasoner',
 		});
-		
-		return completion.choices[0].message.content;
+
+		const _answer = completion.choices[0].message;
+		await query(`UPDATE AI_REQUEST
+                     SET ANSWER           = $1::JSONB,
+                         ANSWER_TIMESTAMP = NOW()
+                     WHERE ID = $2::INT;`,
+			[JSON.stringify(_answer, null, ''), _id]
+		);
+		logger.log(_answer).then();
+
+		return _answer?.content;
 		
 	}catch(err){
 		logger.err(err).then();
@@ -97,20 +132,32 @@ export async function sendMessages(messages){
 
 	if(messages?.length > 0){
 		try{
+			const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+                                      SELECT ID
+                                      FROM INS;`,
+					[JSON.stringify(messages, null, ''), IS_MESSAGE, AI_MODEL_CHAT])
+			)?.rows?.[0]?.id;
 			logger.log(`Отправка сообщений:"`).then();
+			logger.log(`ID: ${_id}`).then();
 			logger.dir(messages).then();
+
 			const completion = await openai.chat.completions.create({
-				messages: [{
-					role:    'system',
-					content: 'Отвечай на русском языке используя разметку `markdown`. Выдавай краткий ответ если иное не уточняется в вопросе. Не выдумывай, используй только проверенные источники информации. Если есть сомнения в вопросе или ответе - задавай уточняющие вопросы.'
-				}].concat(messages),
+				messages,
 				model:       'deepseek-chat',
 				temperature: 1.5,
 			});
-			
+
+			const _answer = completion.choices[0].message;
+			await query(`UPDATE AI_REQUEST
+                         SET ANSWER           = $1::JSONB,
+                             ANSWER_TIMESTAMP = NOW()
+                         WHERE ID = $2::INT;`, [JSON.stringify(_answer, null, ''), _id]
+			);
+
 			logger.trace(`Ответ:`).then();
-			logger.dir(completion?.choices[0]?.message).then();
-			return completion?.choices[0]?.message;
+			logger.dir(_answer).then();
+
+			return _answer;
 			
 		}catch(err){
 			logger.err(err).then();

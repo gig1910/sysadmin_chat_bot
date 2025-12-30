@@ -103,3 +103,37 @@ CREATE TABLE IF NOT EXISTS CHATS_USERS_TEST_QUESTION
     ANSWER  TEXT   NOT NULL,
     PRIMARY KEY (CHAT_ID, USER_ID)
 );
+
+CREATE TABLE ai_kinds
+(
+    id    SMALLSERIAL PRIMARY KEY,
+    name  TEXT NOT NULL,
+    descr TEXT
+);
+INSERT INTO ai_kinds (id, name, descr)
+VALUES (1, 'is_spam', 'Проверка сообщения на SPAM'),
+       (2, 'message', 'Сообщение'),
+       (3, 'test_message', 'Тестовое сообщение')
+ON CONFLICT DO NOTHING;
+
+
+CREATE TABLE ai_models
+(
+    id   SMALLSERIAL PRIMARY KEY,
+    name TEXT NOT NULL
+);
+INSERT INTO SYSADMIN_CHAT_BOT.AI_MODELS (ID, NAME)
+VALUES (1, 'deepseek-reasoner'),
+       (2, 'deepseek-chat')
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE ai_request
+(
+    id                SERIAL PRIMARY KEY,
+    request_timestamp TIMESTAMP DEFAULT NOW() NOT NULL,
+    request           JSONB,
+    answer_timestamp  TIMESTAMP,
+    answer            JSONB,
+    ai_kind           SMALLINT                NOT NULL REFERENCES ai_kinds,
+    ai_model          SMALLINT                NOT NULL REFERENCES ai_models
+);
