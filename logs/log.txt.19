@@ -1,0 +1,12 @@
+2025-08-26T11:28:30.272Z: INFO  : Connect to DB was been tested.
+2025-08-26T11:28:30.272Z: INFO  : Launch bot...
+2025-08-26T11:28:30.273Z: INFO  : Bot is launching.
+2025-08-26T11:28:30.506Z: LOG   : chat message
+2025-08-26T11:28:59.803Z: LOG   : Отправка сообщений:"
+2025-08-26T11:28:59.805Z: OBJECT: [{"role":"assistant","content":"ВОПРОС"},{"role":"user","content":"Привет"}]
+2025-08-26T11:29:03.897Z: TRACE : Ответ:
+2025-08-26T11:29:03.898Z: OBJECT: {"role":"assistant","content":"Привет! 😊 Чем могу помочь?"}
+2025-08-26T11:30:57.341Z: INFO  : Starting main
+2025-08-26T11:30:57.342Z: INFO  : Opening DB...
+2025-08-26T11:30:57.343Z: INFO  : DB is opened.
+2025-08-26T11:30:57.343Z: INFO  : Testing connect to DB...
