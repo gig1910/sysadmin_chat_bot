@@ -32,22 +32,21 @@ export async function isSpamMessage(message){
 		return false;
 	}
 
-	try{
-		// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
-		
-		logger.log(`Тест сообщения на спам "${message}"`).then();
-		const _messages = [{
-			role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
-		}, {
-			role: 'user', content: message
-		}];
-		const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+	// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
+	logger.log(`Тест сообщения на спам "${message}"`).then();
+	const _messages = [{
+		role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
+	}, {
+		role: 'user', content: message
+	}];
+	const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
                                   SELECT ID
                                   FROM INS;`,
-			[JSON.stringify(_messages, null, ''), IS_SPAM, AI_MODEL_REASONER]
-		))?.rows?.[0]?.id;
-		logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
+		[JSON.stringify(_messages, null, ''), IS_SPAM, AI_MODEL_REASONER]
+	))?.rows?.[0]?.id;
+	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
 
+	try{
 		const completion = await openai.chat.completions.create({
 			messages: _messages,
 			model:    'deepseek-reasoner',
@@ -57,7 +56,8 @@ export async function isSpamMessage(message){
 		await query(`UPDATE AI_REQUEST
                      SET ANSWER           = $1::JSONB,
                          ANSWER_TIMESTAMP = NOW()
-                     WHERE ID = $2::INT;`, [JSON.stringify(_answer, null, ''), _id]
+                     WHERE ID = $2::INT;`,
+			[JSON.stringify(completion, null, ''), _id]
 		);
 		logger.log(_answer).then();
 
@@ -65,7 +65,14 @@ export async function isSpamMessage(message){
 		
 	}catch(err){
 		logger.err(err).then();
-		
+		if(_id){
+			await query(`UPDATE AI_REQUEST
+                             SET ERROR           = $1::JSONB,
+                                 ERROR_TIMESTAMP = NOW()
+                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+			);
+		}
+
 		return false;
 	}
 }
@@ -81,21 +88,21 @@ export async function testMessage(message){
 		return null;
 	}
 
-	try{
-		// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
+	// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
 
-		const _messages = [{
-			role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
-		}, {
-			role: 'user', content: message
-		}];
-		const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+	const _messages = [{
+		role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
+	}, {
+		role: 'user', content: message
+	}];
+	const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
                                   SELECT ID
                                   FROM INS;`,
-				[JSON.stringify(_messages, null, ''), IS_TEST_MESSAGE, AI_MODEL_REASONER])
-		)?.rows?.[0]?.id;
-		logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
+			[JSON.stringify(_messages, null, ''), IS_TEST_MESSAGE, AI_MODEL_REASONER])
+	)?.rows?.[0]?.id;
+	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
 
+	try{
 		const completion = await openai.chat.completions.create({
 			messages: _messages,
 			model: 'deepseek-reasoner',
@@ -106,15 +113,22 @@ export async function testMessage(message){
                      SET ANSWER           = $1::JSONB,
                          ANSWER_TIMESTAMP = NOW()
                      WHERE ID = $2::INT;`,
-			[JSON.stringify(_answer, null, ''), _id]
+			[JSON.stringify(completion, null, ''), _id]
 		);
 		logger.log(_answer).then();
 
 		return _answer?.content;
-		
+
 	}catch(err){
 		logger.err(err).then();
-		
+		if(_id){
+			await query(`UPDATE AI_REQUEST
+                             SET ERROR           = $1::JSONB,
+                                 ERROR_TIMESTAMP = NOW()
+                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+			);
+		}
+
 		return '';
 	}
 }
@@ -131,16 +145,16 @@ export async function sendMessages(messages){
 	}
 
 	if(messages?.length > 0){
-		try{
-			const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
-                                      SELECT ID
-                                      FROM INS;`,
-					[JSON.stringify(messages, null, ''), IS_MESSAGE, AI_MODEL_CHAT])
-			)?.rows?.[0]?.id;
-			logger.log(`Отправка сообщений:"`).then();
-			logger.log(`ID: ${_id}`).then();
-			logger.dir(messages).then();
+		const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+                                  SELECT ID
+                                  FROM INS;`,
+				[JSON.stringify(messages, null, ''), IS_MESSAGE, AI_MODEL_CHAT])
+		)?.rows?.[0]?.id;
+		logger.log(`Отправка сообщений:"`).then();
+		logger.log(`ID: ${_id}`).then();
+		logger.dir(messages).then();
 
+		try{
 			const completion = await openai.chat.completions.create({
 				messages,
 				model:       'deepseek-chat',
@@ -151,7 +165,7 @@ export async function sendMessages(messages){
 			await query(`UPDATE AI_REQUEST
                          SET ANSWER           = $1::JSONB,
                              ANSWER_TIMESTAMP = NOW()
-                         WHERE ID = $2::INT;`, [JSON.stringify(_answer, null, ''), _id]
+                         WHERE ID = $2::INT;`, [JSON.stringify(completion, null, ''), _id]
 			);
 
 			logger.trace(`Ответ:`).then();
@@ -161,8 +175,15 @@ export async function sendMessages(messages){
 			
 		}catch(err){
 			logger.err(err).then();
-			
-			return '';
+			if(_id){
+				await query(`UPDATE AI_REQUEST
+                             SET ERROR           = $1::JSONB,
+                                 ERROR_TIMESTAMP = NOW()
+                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+				);
+			}
+
+			return null;
 		}
 	}
 }
@@ -191,7 +212,7 @@ export const deepSeekTalks = async(ctx) => {
 			const text = message.text.replace(/^\/deepseek(?:@\w+)?\s*/igm, '').trim();
 			if(text){
 
-				// Сохраняем сообщение (Тут надо дождаться что бы из БД получить сразу весь диалог, включая ЭТО сообщение)
+				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
 				await telegram_db.addMessage2DB(ctx, chat, user, message);
 
 				// Получаем историю сообщений
@@ -200,7 +221,7 @@ export const deepSeekTalks = async(ctx) => {
 				if(messages?.length > 0){
 					// Запрашиваем ответ у DeepSeek
 
-					// Уведомляем что получили запрос и начали готовить ответ
+					// Уведомляем, что получили запрос и начали готовить ответ
 					let _symb             = `🔃️`;
 					const _mess           = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
 					const updater_handler = setInterval(async() => {
@@ -214,7 +235,7 @@ export const deepSeekTalks = async(ctx) => {
 								break;
 						}
 						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
-					}, 2000);
+					}, 4000);
 
 					const answer = await sendMessages(messages);
 
@@ -227,9 +248,10 @@ export const deepSeekTalks = async(ctx) => {
 						telegram.deleteMessage(ctx, mess_id).then();
 					}
 
+					let mess;
 					if(answer){
 						// Отправляем ответ DeepSeek как ответ на сообщение
-						let mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
+						mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
 						Promise.all(mess).then(mess => {
 							mess?.forEach(m => {
 								if(m?.message_id){
@@ -240,8 +262,20 @@ export const deepSeekTalks = async(ctx) => {
 							});
 						});
 
-						return mess;
+
+					}else{ // Нет ответа, т.к. ошибка
+						mess = await telegram.replyMessage(ctx, message?.message_id, 'Ошибка при запросе у DeepSeek.\nПовторите запрос позднее...', true);
+						Promise.all(mess).then(mess => {
+							mess?.forEach(m => {
+								if(m?.message_id){
+									ctx.update.message = m;
+									//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
+									telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
+								}
+							});
+						});
 					}
+					return mess;
 
 				}else{
 					logger.warn('Нет сообщений на отправку в DeepSeek').then();

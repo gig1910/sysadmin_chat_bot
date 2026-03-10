@@ -135,5 +135,7 @@ CREATE TABLE ai_request
     answer_timestamp  TIMESTAMP,
     answer            JSONB,
     ai_kind           SMALLINT                NOT NULL REFERENCES ai_kinds,
-    ai_model          SMALLINT                NOT NULL REFERENCES ai_models
+    ai_model          SMALLINT                NOT NULL REFERENCES ai_models,
+    error             JSONB,
+    error_timestamp   TIMESTAMP
 );
