@@ -1,10 +1,12 @@
 import * as db from './common/db.mjs';
 import * as logger from './common/logger.mjs';
 
-import * as deepseek from './common/deepseek.mjs';
+import * as ai from './common/ai.mjs';
 
 import * as telegram from './common/telegram.mjs';
 import * as telegram_db from './common/telegram_db.mjs';
+import {sendAutoRemoveMsg} from "./common/telegram.mjs";
+import {getUserStateFromChat} from "./common/telegram_db.mjs";
 
 //-----------------------------
 
@@ -26,9 +28,9 @@ telegram.bot.command('getchatid', async(ctx) => {
 	if(message?.message_id){
 		/** @type {Chat} */ const chat = message?.chat;
 		/** @type {From} */ const user = message?.from;
-		
+
 		telegram.deleteMessage(ctx, message?.message_id).then(); // Удаляем командное сообщение
-		
+
 		if(chat?.id && user?.id){
 			return telegram.sendAutoRemoveMsg(ctx, `userID: ${user?.id}; chatID: ${chat?.id}`, false, 5000);
 		}
@@ -39,7 +41,7 @@ telegram.bot.command('question', async(ctx) => {
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
 		telegram.deleteMessage(ctx, message?.message_id).then(); // Удаляем командное сообщение
-		
+
 		return telegram.sendMessage(ctx,
 			`*Как правильно задавать вопрос.*
 
@@ -69,35 +71,52 @@ telegram.bot.command('question', async(ctx) => {
 	}
 });
 
-telegram.bot.command('deepseek_test_spam', async(ctx) => {
+telegram.bot.command('ai_test_spam', async(ctx) => {
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
-	if(message && message.message_id && message?.text){
-		const arr = (/\/deepseek_test_spam (.*)/gmi).exec(message.text.replace(/\s+/igm, ' '));
-		const answer = await deepseek.testMessage(arr ? arr[1] : message.text);
-		
-		return telegram.replyMessage(ctx,
-			message.message_id,
-			answer || 'NOT_ANSWER',
-			false);
+	if(message && message.message_id && message?.text){ // Есть сообщение
+		const user = await getUserStateFromChat(ctx?.message?.chat, ctx?.message?.user);
+		if(!user?.new_user && !user?.blocked){
+			const arr = (/\/ai_test_spam (.*)/gmi).exec(message.text.replace(/\s+/igm, ' '));
+			const answer = await ai.testMessage(arr ? arr[1] : message.text);
+
+			return sendAutoRemoveMsg(ctx,
+				answer || 'NOT_ANSWER',
+				false);
+
+		}else{
+			return sendAutoRemoveMsg(ctx,
+				`Error query. You are blocked or not accept group rules`,
+				false);
+		}
 	}
 });
 
-telegram.bot.command('deepseek', async(ctx) => { deepseek.deepSeekTalks(ctx).then(); });
+telegram.bot.command('ai', async(ctx) => {
+	const user = await getUserStateFromChat(ctx?.message?.chat, ctx?.message?.user);
+	if(!user?.new_user && !user?.blocked){
+		ai.deepSeekTalks(ctx).then();
+
+	}else{
+		return sendAutoRemoveMsg(ctx,
+			`Error query. You are blocked or not accept group rules`,
+			false);
+	}
+});
 
 telegram.bot.action('apply_rules', async(ctx) => {
 	const message = ctx?.update?.callback_query?.message;
 	if(message){
 		const chat = message.chat;
 		const user = ctx?.update?.callback_query.from;
-		
+
 		if(chat?.id && user?.id){
 			// Сохраняем сообщение
 			telegram_db.addMessage2DB(ctx, chat, user, message).then();
-			
+
 			const userState = await telegram_db.getUserStateFromChat(chat, user);
 			if(userState?.new_user === false){
 				telegram.sendAutoRemoveMsg(ctx, `${telegram.makeName(user)}, Вам не требовалось отвечать на этот вопрос.`, false, 20000).then();
-				
+
 			}else{
 				// Сбрасываем статус нового участника
 				await Promise.all([
@@ -111,41 +130,41 @@ telegram.bot.action('apply_rules', async(ctx) => {
 
 telegram.bot.on('new_chat_members', async(ctx) => {
 	const arr = [];
-	
+
 	for(let i = 0; i < ctx?.message?.new_chat_members; i++){
 		const user = ctx?.update?.message?.new_chat_members[i];
 		arr.push(telegram.sendNewUserQuestion(ctx, user));
 	}
-	
+
 	await Promise.all(arr);
 });
 
 telegram.bot.on('left_chat_member', async(ctx) => {
 	const arr = [];
 	logger.log('left_chat_member').then();
-	
+
 	const func = async(user) => {
 		const message = ctx?.update?.message;
 		const chat = message?.chat;
-		
+
 		await Promise.all([
 			telegram_db.addChat2DB(chat),
 			telegram_db.addUser2DB(user),
 			telegram_db.removeUserFromChat2DB(chat?.id, user?.id)
-		]);
-		
+		]).catch(err => console.error(err?.message || err));
+
 		// Сохраняем сообщение
 		return Promise.all([
 			telegram_db.addMessage2DB(ctx, chat, user, message),
 			telegram.deleteMessage(ctx, ctx?.message?.id)
-		]);
+		]).catch(err => console.error(err?.message || err));
 	};
-	
+
 	for(let i = 0; i < ctx?.message?.left_chat_member; i++){
 		const user = ctx?.message?.left_chat_member[i];
 		arr.push(func(user));
 	}
-	
+
 	return Promise.all(arr);
 });
 
@@ -167,62 +186,62 @@ telegram.bot.on([
 	if(message && message.message_id){
 		const chat = message.chat;
 		const user = message.from;
-		
+
 		await Promise.all([
 			telegram_db.addChat2DB(chat),
 			telegram_db.addUser2DB(user)
-		]);
-		
+		]).catch(err => console.error(err?.message || err));
+
 		//Получаем значение участника для чата
 		const userState = await telegram_db.getUserStateFromChat(chat, user);
 		if(userState?.blocked){
 			// Пользователь УЖЕ заблокирован. Просто удаляем его сообщение
 			return telegram.deleteMessage(ctx, message.message_id);
-			
+
 		}else if(typeof (userState?.new_user) !== 'boolean'){
 			// добавляем участника в чат как нового
 			await telegram_db.addUser2Chat2DB(chat, user, true);
 		}
-		
+
 		// Сохраняем сообщение
 		telegram_db.addMessage2DB(ctx, chat, user, message).then();
-		
+
 		if(chat.id > 0){    // Личные сообщения
-			
+
 			// Получаем список 20 сообщений как диалог (сообщения по ответам) для нормального сохранения истории и скармливаем это DeepSeek
 			// Ответ отправляем как ответ на сообщение, т.к. возможен разрыв в ответах, что бы понимать на что DeepSeek отвечал
-			return deepseek.deepSeekTalks(ctx);
-			
+			return ai.deepSeekTalks(ctx);
+
 		}else{              // Сообщение в группу
 			if(userState?.new_user !== false){
 				// Обработка сообщения нового пользователя
 				await telegram.deleteMessage(ctx, message.message_id);
-				
+
 				if(message?.text){
-					
+
 					//Отправляем сообщение на проверку на SPAM
-					deepseek.isSpamMessage(ctx?.message?.text).then(async res => {
+					ai.isSpamMessage(ctx?.message?.text).then(async res => {
 						if(res){
 							// Просто удаляем пользователя как спамера
 							return telegram.removeUserFromChat(ctx, chat, user);
 						}
 					});
-					
+
 					// Показываем приветственный текст с предложением принять правила группы
 					return telegram.sendNewUserQuestion(ctx, user);
-					
+
 				}else{
 					// Ну кто начинает "Общение" выкладывая сразу только картинку, видео, аудио или документ? СПАМЕР!!!!
-					
+
 					// Просто удаляем пользователя как спамера
 					return telegram.removeUserFromChat(ctx, chat, user);
 				}
-				
+
 			}else if(message?.reply_to_message){
 				if(message?.reply_to_message?.text?.substring(0, 23) === 'Привет, я бот-помошник.' ||
-				   await telegram_db.hasDeepSeekTalkMarker(message.chat?.id,  message?.reply_to_message?.message_id)){
+					await telegram_db.hasDeepSeekTalkMarker(message.chat?.id, message?.reply_to_message?.message_id)){
 					// Продолжаем диалог
-					return deepseek.deepSeekTalks(ctx);
+					return ai.deepSeekTalks(ctx);
 				}
 			}
 		}
@@ -239,19 +258,19 @@ let process_users_handler;
 		logger.info('Testing connect to DB...').then();
 		await db.query('SELECT 1;');
 		logger.info('Connect to DB was been tested.').then();
-		
-		
+
+
 		logger.info('Launch bot...').then();
 		telegram.bot.launch().then();
 		logger.info('Bot is launching.').then();
-		
+
 		process_users_handler = setInterval(async() => { // Запуск процесса очистки группы от ботов, которые более чем 3 часа не отвечают на запрос принятия правил группы (запуск раз в полчаса)
 			logger.info('Start interval function for clear chats...').then();
-			
+
 			logger.info('getting forgotten users from chats...').then();
 			// Получаем список всех пользователей, которые отправили сообщение в чат или вошли в чат, но так и не приняли правила чата (99,9999% что это боты)
 			const users = await telegram_db.getUsers(-1001325427983);
-			
+
 			for(let i = 0; i < users.rows.length; i++){
 				const user = users.rows[i];
 				if(user){
@@ -259,9 +278,9 @@ let process_users_handler;
 					telegram.removeUserFromChat(null, {id: user.chat_id}, {id: user.user_id}).then();
 				}
 			}
-			
+
 		}, 60000);
-		
+
 	}catch(err){
 		logger.err(err).then();
 		telegram.bot.stop('SIGINT');

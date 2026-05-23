@@ -4,13 +4,25 @@ import * as telegram from "./telegram.mjs";
 import * as telegram_db from "./telegram_db.mjs";
 import {query} from "./db.mjs";
 
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const AI_URL = process.env.AI_URL;
+if(!AI_URL){
+	logger.warn(`Not set AI URL. AI won't worked.`).then();
+}
+
+const AI_API_KEY = process.env.AI_URL;
+if(!AI_API_KEY){
+	logger.warn(`Not set AI URL. AI won't worked.`).then();
+}
+
+const AI_CHAT_MODEL = process.env.AI_CHAT_MODEL;
+const AI_REASON_MODEL = process.env.AI_REASON_MODEL;
+const AI_HISTORY_MESSAGES_MAX_LENGTH = parseInt(process.env.AI_HISTORY_MESSAGES_MAX_LENGTH, 10) ?? 1000;
 
 let openai;
-if(DEEPSEEK_API_KEY){
+if(AI_API_KEY){
 	openai = new OpenAI({
-		baseURL: 'https://api.deepseek.com',
-		apiKey:  process.env.DEEPSEEK_API_KEY,
+		baseURL: AI_URL,
+		apiKey: AI_API_KEY,
 		timeout: 10 * 60 * 1000, // 10 минут
 	});
 }
@@ -27,9 +39,9 @@ const AI_MODEL_CHAT = 2;
  * @returns {Promise<Boolean>}
  */
 export async function isSpamMessage(message){
-	if(!openai) {
-		logger.warn('DeepSeek API key is not set').then();
-		return false;
+	if(!openai){
+		logger.warn('AI not configure').then();
+		return null;
 	}
 
 	// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
@@ -39,9 +51,10 @@ export async function isSpamMessage(message){
 	}, {
 		role: 'user', content: message
 	}];
-	const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
-                                  SELECT ID
-                                  FROM INS;`,
+	const _id = (await query(`
+                WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+                SELECT ID
+                FROM INS;`,
 		[JSON.stringify(_messages, null, ''), IS_SPAM, AI_MODEL_REASONER]
 	))?.rows?.[0]?.id;
 	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
@@ -49,27 +62,28 @@ export async function isSpamMessage(message){
 	try{
 		const completion = await openai.chat.completions.create({
 			messages: _messages,
-			model:    'deepseek-reasoner',
+			model: 'deepseek-reasoner',
 		});
 
 		const _answer = completion.choices[0].message;
-		await query(`UPDATE AI_REQUEST
-                     SET ANSWER           = $1::JSONB,
-                         ANSWER_TIMESTAMP = NOW()
-                     WHERE ID = $2::INT;`,
+		await query(`
+                    UPDATE AI_REQUEST
+                    SET ANSWER           = $1::JSONB,
+                        ANSWER_TIMESTAMP = NOW()
+                    WHERE ID = $2::INT;`,
 			[JSON.stringify(completion, null, ''), _id]
 		);
 		logger.log(_answer).then();
 
 		return _answer?.content?.toUpperCase().includes('YES');
-		
+
 	}catch(err){
 		logger.err(err).then();
 		if(_id){
 			await query(`UPDATE AI_REQUEST
-                             SET ERROR           = $1::JSONB,
-                                 ERROR_TIMESTAMP = NOW()
-                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+                         SET ERROR           = $1::JSONB,
+                             ERROR_TIMESTAMP = NOW()
+                         WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
 			);
 		}
 
@@ -83,8 +97,8 @@ export async function isSpamMessage(message){
  * @returns {Promise<?String>}
  */
 export async function testMessage(message){
-	if(!openai) {
-		logger.warn('DeepSeek API key is not set').then();
+	if(!openai){
+		logger.warn('AI not configure').then();
 		return null;
 	}
 
@@ -95,9 +109,10 @@ export async function testMessage(message){
 	}, {
 		role: 'user', content: message
 	}];
-	const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
-                                  SELECT ID
-                                  FROM INS;`,
+	const _id = (await query(
+			`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
+             SELECT ID
+             FROM INS;`,
 			[JSON.stringify(_messages, null, ''), IS_TEST_MESSAGE, AI_MODEL_REASONER])
 	)?.rows?.[0]?.id;
 	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
@@ -109,10 +124,11 @@ export async function testMessage(message){
 		});
 
 		const _answer = completion.choices[0].message;
-		await query(`UPDATE AI_REQUEST
-                     SET ANSWER           = $1::JSONB,
-                         ANSWER_TIMESTAMP = NOW()
-                     WHERE ID = $2::INT;`,
+		await query(`
+                    UPDATE AI_REQUEST
+                    SET ANSWER           = $1::JSONB,
+                        ANSWER_TIMESTAMP = NOW()
+                    WHERE ID = $2::INT;`,
 			[JSON.stringify(completion, null, ''), _id]
 		);
 		logger.log(_answer).then();
@@ -123,9 +139,9 @@ export async function testMessage(message){
 		logger.err(err).then();
 		if(_id){
 			await query(`UPDATE AI_REQUEST
-                             SET ERROR           = $1::JSONB,
-                                 ERROR_TIMESTAMP = NOW()
-                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+                         SET ERROR           = $1::JSONB,
+                             ERROR_TIMESTAMP = NOW()
+                         WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
 			);
 		}
 
@@ -139,15 +155,16 @@ export async function testMessage(message){
  * @returns {Promise<Object>}
  */
 export async function sendMessages(messages){
-	if(!openai) {
-		logger.warn('DeepSeek API key is not set').then();
+	if(!openai){
+		logger.warn('AI not configure').then();
 		return null;
 	}
 
 	if(messages?.length > 0){
-		const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
-                                  SELECT ID
-                                  FROM INS;`,
+		const _id = (await query(`
+                            WITH INS (ID) AS ( INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2:: SMALLINT, $3:: SMALLINT) RETURNING ID)
+                            SELECT ID
+                            FROM INS;`,
 				[JSON.stringify(messages, null, ''), IS_MESSAGE, AI_MODEL_CHAT])
 		)?.rows?.[0]?.id;
 		logger.log(`Отправка сообщений:"`).then();
@@ -157,7 +174,7 @@ export async function sendMessages(messages){
 		try{
 			const completion = await openai.chat.completions.create({
 				messages,
-				model:       'deepseek-chat',
+				model: 'deepseek-chat',
 				temperature: 1.5,
 			});
 
@@ -172,7 +189,7 @@ export async function sendMessages(messages){
 			logger.dir(_answer).then();
 
 			return _answer;
-			
+
 		}catch(err){
 			logger.err(err).then();
 			if(_id){
@@ -196,8 +213,8 @@ export async function sendMessages(messages){
  * @returns {Promise<[Message.TextMessage]>}
  */
 export const deepSeekTalks = async(ctx) => {
-	if(!openai) {
-		logger.warn('DeepSeek API key is not set').then();
+	if(!openai){
+		logger.warn('AI not configure').then();
 		return null;
 	}
 
@@ -222,8 +239,8 @@ export const deepSeekTalks = async(ctx) => {
 					// Запрашиваем ответ у DeepSeek
 
 					// Уведомляем, что получили запрос и начали готовить ответ
-					let _symb             = `🔃️`;
-					const _mess           = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
+					let _symb = `🔃️`;
+					const _mess = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
 					const updater_handler = setInterval(async() => {
 						const mess_id = (await _mess[0])?.message_id;
 						switch(_symb){
@@ -237,6 +254,7 @@ export const deepSeekTalks = async(ctx) => {
 						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
 					}, 4000);
 
+					//  Предварительно Удаляем "лишние" символы с начала диалога и если превышен размер выставляем там ...
 					const answer = await sendMessages(messages);
 
 					// Останавливаем обновление сообщения

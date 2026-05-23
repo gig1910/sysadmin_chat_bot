@@ -37,13 +37,13 @@ import * as db from './db.mjs';
 export const addChat2DB = async chat => db.query(`
             INSERT INTO CHATS(ID, TYPE, TITLE, INVITE_LINK, PERMISSIONS, JOIN_TO_SEND_MESSAGES, MAX_REACTION_COUNT, RAW)
             VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
-            ON CONFLICT(ID) DO UPDATE SET TYPE=EXCLUDED.TYPE,
-                                          TITLE=EXCLUDED.TITLE,
-                                          INVITE_LINK=EXCLUDED.INVITE_LINK,
-                                          PERMISSIONS=EXCLUDED.PERMISSIONS,
-                                          JOIN_TO_SEND_MESSAGES=EXCLUDED.JOIN_TO_SEND_MESSAGES,
-                                          MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
-                                          RAW=EXCLUDED.RAW;`,
+            ON CONFLICT(ID) DO UPDATE SET TYPE=excluded.TYPE,
+                                          TITLE=excluded.TITLE,
+                                          INVITE_LINK=excluded.INVITE_LINK,
+                                          PERMISSIONS=excluded.PERMISSIONS,
+                                          JOIN_TO_SEND_MESSAGES=excluded.JOIN_TO_SEND_MESSAGES,
+                                          MAX_REACTION_COUNT=excluded.MAX_REACTION_COUNT,
+                                          RAW=excluded.RAW;`,
 	[chat?.id, chat?.type, chat?.title, chat?.invite_link, CircularJSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, CircularJSON.stringify(chat)]
 );
 
