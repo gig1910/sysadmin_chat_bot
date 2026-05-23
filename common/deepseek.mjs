@@ -168,11 +168,23 @@ export async function sendMessages(messages, analyse){
 		logger.dir(messages).then();
 
 		try{
-			const completion = await openai.chat.completions.create({
-				messages,
-				model:       !!analyse ? AI_CHAT_MODEL : AI_REASONER_MODEL,
-				temperature: 1.5,
-			});
+			let completion;
+			if(!!analyse){
+				completion = await openai.chat.completions.create({
+					messages,
+					model:       AI_CHAT_MODEL,
+					thinking: {"type": "enabled"},
+					reasoning_effort: "high",
+					temperature: 1.2,
+				});
+
+			}else{
+				completion = await openai.chat.completions.create({
+					messages,
+					model:       AI_CHAT_MODEL,
+					temperature: 1.5,
+				});
+			}
 
 			const _answer = completion.choices[0].message;
 			await query(`UPDATE AI_REQUEST
