@@ -213,7 +213,7 @@ export const deepSeekTalks = async(ctx) => {
 			if(text){
 
 				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
-				await telegram_db.addMessage2DB(ctx, chat, user, message);
+				await telegram_db.addMessage2DB(ctx, chat, user, message).catch(console.error);
 
 				// Получаем историю сообщений
 				const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, message.chat?.id, message.message_id);

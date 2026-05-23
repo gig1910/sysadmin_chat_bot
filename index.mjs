@@ -103,7 +103,7 @@ telegram.bot.action('apply_rules', async(ctx) => {
 				await Promise.all([
 					telegram_db.addUser2Chat2DB(chat, user, false),
 					telegram.sendAutoRemoveMsg(ctx, `Спасибо, ${telegram.makeName(user)}. Теперь Вы полноправный член группы.`, false, 20000)
-				]);
+				]).catch(console.error);
 			}
 		}
 	}
@@ -117,7 +117,7 @@ telegram.bot.on('new_chat_members', async(ctx) => {
 		arr.push(telegram.sendNewUserQuestion(ctx, user));
 	}
 	
-	await Promise.all(arr);
+	await Promise.all(arr).catch(console.error);
 });
 
 telegram.bot.on('left_chat_member', async(ctx) => {
@@ -132,13 +132,13 @@ telegram.bot.on('left_chat_member', async(ctx) => {
 			telegram_db.addChat2DB(chat),
 			telegram_db.addUser2DB(user),
 			telegram_db.removeUserFromChat2DB(chat?.id, user?.id)
-		]);
+		]).catch(console.error);
 		
 		// Сохраняем сообщение
 		return Promise.all([
 			telegram_db.addMessage2DB(ctx, chat, user, message),
 			telegram.deleteMessage(ctx, ctx?.message?.id)
-		]);
+		]).catch(console.error);
 	};
 	
 	for(let i = 0; i < ctx?.message?.left_chat_member; i++){
@@ -146,7 +146,7 @@ telegram.bot.on('left_chat_member', async(ctx) => {
 		arr.push(func(user));
 	}
 	
-	return Promise.all(arr);
+	return Promise.all(arr).catch(console.error);
 });
 
 /*
@@ -171,7 +171,7 @@ telegram.bot.on([
 		await Promise.all([
 			telegram_db.addChat2DB(chat),
 			telegram_db.addUser2DB(user)
-		]);
+		]).catch(console.error);
 		
 		//Получаем значение участника для чата
 		const userState = await telegram_db.getUserStateFromChat(chat, user);
