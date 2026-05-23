@@ -84,6 +84,8 @@ telegram.bot.command('deepseek_test_spam', async(ctx) => {
 
 telegram.bot.command('deepseek', async(ctx) => { deepseek.deepSeekTalks(ctx).then(); });
 
+telegram.bot.command('deepseek_analyse', async(ctx) => { deepseek.deepSeekTalks(ctx, true).then(); });
+
 telegram.bot.action('apply_rules', async(ctx) => {
 	const message = ctx?.update?.callback_query?.message;
 	if(message){

@@ -1,8 +1,8 @@
-import OpenAI from "openai";
-import logger from "./logger.mjs";
-import * as telegram from "./telegram.mjs";
+import OpenAI           from "openai";
+import logger           from "./logger.mjs";
+import * as telegram    from "./telegram.mjs";
 import * as telegram_db from "./telegram_db.mjs";
-import {query} from "./db.mjs";
+import {query}          from "./db.mjs";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -15,11 +15,14 @@ if(DEEPSEEK_API_KEY){
 	});
 }
 
-const IS_SPAM = 1;
-const IS_MESSAGE = 2;
-const IS_TEST_MESSAGE = 3;
+const IS_SPAM           = 1;
+const IS_MESSAGE        = 2;
+const IS_TEST_MESSAGE   = 3;
 const AI_MODEL_REASONER = 1;
-const AI_MODEL_CHAT = 2;
+const AI_MODEL_CHAT     = 2;
+
+const AI_CHAT_MODEL     = 'deepseek-v4-flash';
+const AI_REASONER_MODEL = 'deepseek-v4-pro';
 
 /**
  * Тест сообщения на SPAM
@@ -27,7 +30,7 @@ const AI_MODEL_CHAT = 2;
  * @returns {Promise<Boolean>}
  */
 export async function isSpamMessage(message){
-	if(!openai) {
+	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return false;
 	}
@@ -39,9 +42,12 @@ export async function isSpamMessage(message){
 	}, {
 		role: 'user', content: message
 	}];
-	const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
-                                  SELECT ID
-                                  FROM INS;`,
+	const _id       = (await query(`WITH INS (ID) AS (
+                                    INSERT
+                                    INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL)
+                                    VALUES ($1::JSONB, $2:: SMALLINT, $3:: SMALLINT) RETURNING ID)
+            SELECT ID
+            FROM INS;`,
 		[JSON.stringify(_messages, null, ''), IS_SPAM, AI_MODEL_REASONER]
 	))?.rows?.[0]?.id;
 	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
@@ -49,27 +55,27 @@ export async function isSpamMessage(message){
 	try{
 		const completion = await openai.chat.completions.create({
 			messages: _messages,
-			model:    'deepseek-reasoner',
+			model:    AI_CHAT_MODEL, //AI_REASONER_MODEL,
 		});
 
 		const _answer = completion.choices[0].message;
 		await query(`UPDATE AI_REQUEST
-                     SET ANSWER           = $1::JSONB,
+                     SET ANSWER = $1::JSONB,
                          ANSWER_TIMESTAMP = NOW()
-                     WHERE ID = $2::INT;`,
+                     WHERE ID = $2:: INT;`,
 			[JSON.stringify(completion, null, ''), _id]
 		);
 		logger.log(_answer).then();
 
 		return _answer?.content?.toUpperCase().includes('YES');
-		
+
 	}catch(err){
 		logger.err(err).then();
 		if(_id){
 			await query(`UPDATE AI_REQUEST
-                             SET ERROR           = $1::JSONB,
+                         SET ERROR = $1::JSONB,
                                  ERROR_TIMESTAMP = NOW()
-                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+                         WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
 			);
 		}
 
@@ -83,7 +89,7 @@ export async function isSpamMessage(message){
  * @returns {Promise<?String>}
  */
 export async function testMessage(message){
-	if(!openai) {
+	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return null;
 	}
@@ -95,9 +101,12 @@ export async function testMessage(message){
 	}, {
 		role: 'user', content: message
 	}];
-	const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
-                                  SELECT ID
-                                  FROM INS;`,
+	const _id       = (await query(`WITH INS (ID) AS (
+                                    INSERT
+                                    INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL)
+                                    VALUES ($1::JSONB, $2:: SMALLINT, $3:: SMALLINT) RETURNING ID)
+                    SELECT ID
+                    FROM INS;`,
 			[JSON.stringify(_messages, null, ''), IS_TEST_MESSAGE, AI_MODEL_REASONER])
 	)?.rows?.[0]?.id;
 	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
@@ -105,14 +114,14 @@ export async function testMessage(message){
 	try{
 		const completion = await openai.chat.completions.create({
 			messages: _messages,
-			model: 'deepseek-reasoner',
+			model:    AI_CHAT_MODEL, //AI_REASONER_MODEL,
 		});
 
 		const _answer = completion.choices[0].message;
 		await query(`UPDATE AI_REQUEST
-                     SET ANSWER           = $1::JSONB,
+                     SET ANSWER = $1::JSONB,
                          ANSWER_TIMESTAMP = NOW()
-                     WHERE ID = $2::INT;`,
+                     WHERE ID = $2:: INT;`,
 			[JSON.stringify(completion, null, ''), _id]
 		);
 		logger.log(_answer).then();
@@ -123,9 +132,9 @@ export async function testMessage(message){
 		logger.err(err).then();
 		if(_id){
 			await query(`UPDATE AI_REQUEST
-                             SET ERROR           = $1::JSONB,
+                         SET ERROR = $1::JSONB,
                                  ERROR_TIMESTAMP = NOW()
-                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+                         WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
 			);
 		}
 
@@ -136,18 +145,22 @@ export async function testMessage(message){
 /**
  * Отправка сообщения в DeepSeek
  * @param {Object} messages
+ * @param {Boolean} [analyse]
  * @returns {Promise<Object>}
  */
-export async function sendMessages(messages){
-	if(!openai) {
+export async function sendMessages(messages, analyse){
+	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return null;
 	}
 
 	if(messages?.length > 0){
-		const _id = (await query(`WITH INS (ID) AS (INSERT INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL) VALUES ($1::JSONB, $2::SMALLINT, $3::SMALLINT) RETURNING ID)
-                                  SELECT ID
-                                  FROM INS;`,
+		const _id = (await query(`WITH INS (ID) AS (
+                                  INSERT
+                                  INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL)
+                                  VALUES ($1::JSONB, $2:: SMALLINT, $3:: SMALLINT) RETURNING ID)
+                        SELECT ID
+                        FROM INS;`,
 				[JSON.stringify(messages, null, ''), IS_MESSAGE, AI_MODEL_CHAT])
 		)?.rows?.[0]?.id;
 		logger.log(`Отправка сообщений:"`).then();
@@ -157,29 +170,29 @@ export async function sendMessages(messages){
 		try{
 			const completion = await openai.chat.completions.create({
 				messages,
-				model:       'deepseek-chat',
+				model:       !!analyse ? AI_CHAT_MODEL : AI_REASONER_MODEL,
 				temperature: 1.5,
 			});
 
 			const _answer = completion.choices[0].message;
 			await query(`UPDATE AI_REQUEST
-                         SET ANSWER           = $1::JSONB,
+                         SET ANSWER = $1::JSONB,
                              ANSWER_TIMESTAMP = NOW()
-                         WHERE ID = $2::INT;`, [JSON.stringify(completion, null, ''), _id]
+                         WHERE ID = $2:: INT;`, [JSON.stringify(completion, null, ''), _id]
 			);
 
 			logger.trace(`Ответ:`).then();
 			logger.dir(_answer).then();
 
 			return _answer;
-			
+
 		}catch(err){
 			logger.err(err).then();
 			if(_id){
 				await query(`UPDATE AI_REQUEST
-                             SET ERROR           = $1::JSONB,
+                             SET ERROR = $1::JSONB,
                                  ERROR_TIMESTAMP = NOW()
-                             WHERE ID = $2::INT;`, [JSON.stringify(err, null, ''), _id]
+                             WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
 				);
 			}
 
@@ -193,10 +206,11 @@ export async function sendMessages(messages){
 /**
  * Диалог с DeepSeek
  * @param {CTX} ctx
+ * @param {Boolean} [analyse]
  * @returns {Promise<[Message.TextMessage]>}
  */
-export const deepSeekTalks = async(ctx) => {
-	if(!openai) {
+export const deepSeekTalks = async(ctx, analyse) => {
+	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return null;
 	}
@@ -237,7 +251,7 @@ export const deepSeekTalks = async(ctx) => {
 						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
 					}, 4000);
 
-					const answer = await sendMessages(messages);
+					const answer = await sendMessages(messages, analyse);
 
 					// Останавливаем обновление сообщения
 					clearInterval(updater_handler);
