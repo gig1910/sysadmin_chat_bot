@@ -1,5 +1,5 @@
 import CircularJSON from 'circular-json';
-import * as db from './db.mjs';
+import * as db      from './db.mjs';
 
 //-----------------------------------
 
@@ -165,10 +165,11 @@ export const getMessagesReplyLink = async(bot_id, chat_id, from_message_id) => (
 		// Отрезаем командный текст, если он есть
 		const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
 		return {
-			role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool'
+			role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
+			name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
 			content: arr ? arr[1] : row.message_text
 		};
-		
+
 	}else{
 		return null;
 	}
