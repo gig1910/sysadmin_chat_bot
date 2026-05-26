@@ -224,7 +224,7 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
                          FROM MESSAGES M
                                   JOIN USERS U ON M.USER_ID = U.ID
                          WHERE CHAT_ID = $1::BIGINT
-                           AND TIMESTAMP >= NOW() - INTERVAL ${interval ? interval : '2 HOURS'}
+                           AND TIMESTAMP >= NOW() - INTERVAL ${interval ? interval : '\'2 HOURS\''}
                          ORDER BY TIMESTAMP;`).then();
 	return (await db.query(`SELECT U.ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE
                          FROM MESSAGES M
