@@ -193,28 +193,32 @@ export async function sendMessages(messages, analyse, chat_id){
 		}
 
 		try{
-			let completion;
+			let aiParams = {};
 			if(!!analyse){
 
 				/* {
 					role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
 				} */
-				completion = await openai.chat.completions.create({
+				aiParams = {
 					messages,
 					model:            AI_CHAT_MODEL,
 					thinking:         {"type": "enabled"},
 					reasoning_effort: "high",
 					temperature:      temperature || 1.2,
-				});
+				};
 
 			}else{
-				completion = await openai.chat.completions.create({
+				aiParams = {
 					messages,
 					model:       AI_CHAT_MODEL,
 					temperature: temperature || 1.5,
-				});
+				};
 			}
 
+			logger.trace('Итоговый запрос').then();
+			logger.trace(aiParams).then();
+
+			const  completion = await openai.chat.completions.create(aiParams);
 			const _answer = completion.choices[0].message;
 			await query(`UPDATE AI_REQUEST
                          SET ANSWER = $1::JSONB,
