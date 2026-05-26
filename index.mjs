@@ -5,6 +5,7 @@ import * as deepseek from './common/deepseek.mjs';
 
 import * as telegram from './common/telegram.mjs';
 import * as telegram_db from './common/telegram_db.mjs';
+import {deepSeekSummary} from "./common/deepseek.mjs";
 
 //-----------------------------
 
@@ -85,6 +86,8 @@ telegram.bot.command('deepseek_test_spam', async(ctx) => {
 telegram.bot.command('deepseek', async(ctx) => { deepseek.deepSeekTalks(ctx).then(); });
 
 telegram.bot.command('deepseek_analyse', async(ctx) => { deepseek.deepSeekTalks(ctx, true).then(); });
+
+telegram.bot.command('deepseek_summary', async(ctx) => { deepseek.deepSeekSummary(ctx, true).then(); });
 
 //telegram.bot.command('ai_settints_show', async(ctx) => { deepseek.deepSeekTalks(ctx, true).then(); });
 

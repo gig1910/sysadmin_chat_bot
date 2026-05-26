@@ -217,3 +217,28 @@ export const getUsers = async(chat_id) => db.query(`
     GROUP BY UC.CHAT_ID, UC.USER_ID
     HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
     ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`, [chat_id]);
+
+export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) => {
+	return (await query(`SELECT U.ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE
+                         FROM MESSAGES M
+                                  JOIN USERS U ON M.USER_ID = U.ID
+                         WHERE CHAT_ID = $1::BIGINT
+                           AND TIMESTAMP >= NOW() - INTERVAL ${interval ? interval : '2 HOURS'}
+                         ORDER BY TIMESTAMP;`, [chat_id]))
+		?.rows?.map(row => {
+			if(row){
+				// Отрезаем командный текст, если он есть
+				const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
+				return {
+					role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
+					name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
+					content: arr ? arr[1] : row.message_text
+				};
+
+			}else{
+				return null;
+			}
+		})
+		.filter(row => !!row)
+		?.filter(mess => !!mess?.content);
+}
