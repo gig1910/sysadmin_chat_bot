@@ -219,7 +219,7 @@ export const getUsers = async(chat_id) => db.query(`
     ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`, [chat_id]);
 
 export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) => {
-	return (await query(`SELECT U.ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE
+	return (await db.query(`SELECT U.ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE
                          FROM MESSAGES M
                                   JOIN USERS U ON M.USER_ID = U.ID
                          WHERE CHAT_ID = $1::BIGINT
