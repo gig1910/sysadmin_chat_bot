@@ -1,5 +1,6 @@
 import CircularJSON from 'circular-json';
 import * as db      from './db.mjs';
+import logger       from "./logger.mjs";
 
 //-----------------------------------
 
