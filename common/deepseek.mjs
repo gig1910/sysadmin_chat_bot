@@ -146,9 +146,10 @@ export async function testMessage(message){
  * Отправка сообщения в DeepSeek
  * @param {Object} messages
  * @param {Boolean} [analyse]
+ * @param {Number} [chat_id]
  * @returns {Promise<Object>}
  */
-export async function sendMessages(messages, analyse){
+export async function sendMessages(messages, analyse, chat_id){
 	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return null;
@@ -167,22 +168,50 @@ export async function sendMessages(messages, analyse){
 		logger.log(`ID: ${_id}`).then();
 		logger.dir(messages).then();
 
+		// Получаем блок настроек для чата/AI
+		let systemPrompt = '';
+		let temperature  = 1.5;
+
+		(await query(`SELECT TYPE, VALUE
+                      FROM AI2CHAT_SETTINGS
+                      WHERE CHAT_ID = $1::BIGINT AND AI_ID=$2:: INT
+                        AND reasoner_mode=$3::BOOL`,
+			[chat_id, 1, !!analyse]))?.rows?.map(row => {
+			switch(row.type){
+				case 'SYSTEM_PROMPT':
+					systemPrompt = row.valee;
+					break;
+
+				case 'TEMPERATURES':
+					temperature = parseFloat(row.value);
+					break;
+			}
+		});
+
+		if(systemPrompt){
+			messages = [{role: 'system', content: systemPrompt}].concat(messages);
+		}
+
 		try{
 			let completion;
 			if(!!analyse){
+
+				/* {
+					role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
+				} */
 				completion = await openai.chat.completions.create({
 					messages,
-					model:       AI_CHAT_MODEL,
-					thinking: {"type": "enabled"},
+					model:            AI_CHAT_MODEL,
+					thinking:         {"type": "enabled"},
 					reasoning_effort: "high",
-					temperature: 1.2,
+					temperature:      temperature || 1.2,
 				});
 
 			}else{
 				completion = await openai.chat.completions.create({
 					messages,
 					model:       AI_CHAT_MODEL,
-					temperature: 1.5,
+					temperature: temperature || 1.5,
 				});
 			}
 
@@ -263,7 +292,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
 					}, 4000);
 
-					const answer = await sendMessages(messages, analyse);
+					const answer = await sendMessages(messages, analyse, chat_id);
 
 					// Останавливаем обновление сообщения
 					clearInterval(updater_handler);

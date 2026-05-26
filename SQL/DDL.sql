@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS MESSAGES
     CTX        JSONB,
     PRIMARY KEY (MESSAGE_ID, CHAT_ID)
 );
-CREATE INDEX IDX_MESSAGE_CTX ON MESSAGES USING GIN(CTX);
+CREATE INDEX IDX_MESSAGE_CTX ON MESSAGES USING GIN (CTX);
 
 CREATE TABLE IF NOT EXISTS CHATS_USERS_TEST_QUESTION
 (
@@ -105,38 +105,69 @@ CREATE TABLE IF NOT EXISTS CHATS_USERS_TEST_QUESTION
     PRIMARY KEY (CHAT_ID, USER_ID)
 );
 
-CREATE TABLE ai_kinds
+CREATE TABLE AI_KINDS
 (
-    id    SMALLSERIAL PRIMARY KEY,
-    name  TEXT NOT NULL,
-    descr TEXT
+    ID    SMALLSERIAL PRIMARY KEY,
+    NAME  TEXT NOT NULL,
+    DESCR TEXT
 );
-INSERT INTO ai_kinds (id, name, descr)
+INSERT INTO AI_KINDS (ID, NAME, DESCR)
 VALUES (1, 'is_spam', 'Проверка сообщения на SPAM'),
        (2, 'message', 'Сообщение'),
        (3, 'test_message', 'Тестовое сообщение')
 ON CONFLICT DO NOTHING;
 
 
-CREATE TABLE ai_models
+CREATE TABLE AI_MODELS
 (
-    id   SMALLSERIAL PRIMARY KEY,
-    name TEXT NOT NULL
+    ID   SMALLSERIAL PRIMARY KEY,
+    NAME TEXT NOT NULL
 );
 INSERT INTO SYSADMIN_CHAT_BOT.AI_MODELS (ID, NAME)
 VALUES (1, 'deepseek-reasoner'),
        (2, 'deepseek-chat')
 ON CONFLICT DO NOTHING;
 
-CREATE TABLE ai_request
+CREATE TABLE AI_REQUEST
 (
-    id                SERIAL PRIMARY KEY,
-    request_timestamp TIMESTAMP DEFAULT NOW() NOT NULL,
-    request           JSONB,
-    answer_timestamp  TIMESTAMP,
-    answer            JSONB,
-    ai_kind           SMALLINT                NOT NULL REFERENCES ai_kinds,
-    ai_model          SMALLINT                NOT NULL REFERENCES ai_models,
-    error             JSONB,
-    error_timestamp   TIMESTAMP
+    ID                SERIAL PRIMARY KEY,
+    REQUEST_TIMESTAMP TIMESTAMP DEFAULT NOW() NOT NULL,
+    REQUEST           JSONB,
+    ANSWER_TIMESTAMP  TIMESTAMP,
+    ANSWER            JSONB,
+    AI_KIND           SMALLINT                NOT NULL REFERENCES AI_KINDS,
+    AI_MODEL          SMALLINT                NOT NULL REFERENCES AI_MODELS,
+    ERROR             JSONB,
+    ERROR_TIMESTAMP   TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS AIS
+(
+    ID      SERIAL PRIMARY KEY,
+    NAME    TEXT NOT NULL,
+    API_URL TEXT NOT NULL
+);
+INSERT INTO AIS (NAME, API_URL)
+VALUES ('deepseek', 'https://api.deepseek.com'),
+       ('openai', 'https://api.openai.com'),
+       ('groq', 'https://api.groq.com')
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS AI2CHAT_SETTINGS
+(
+    CHAT_ID       BIGINT NOT NULL REFERENCES CHATS ON DELETE CASCADE ON UPDATE CASCADE,
+    AI_ID         INT    NOT NULL REFERENCES AIS ON DELETE CASCADE ON UPDATE CASCADE,
+    TYPE          TEXT   NOT NULL,
+    REASONER_MODE BOOL DEFAULT FALSE,
+    VALUE         TEXT   NOT NULL,
+    PRIMARY KEY (CHAT_ID, AI_ID, TYPE, REASONER_MODE)
+);
+INSERT INTO AI2CHAT_SETTINGS (CHAT_ID, AI_ID, TYPE, REASONER_MODE, VALUE)
+VALUES (-1003676689309, 1, 'SYSTEM_PROMPT', FALSE, 'Это чат-диалог. Твоя роль: поддержка беседы и ответы на вопросы, заданные именно тебе. Будь минимально вежливым. В вежливости нет истины. Но быть максимально корректным с логической и ' ||
+                                                'фактологической ' ||
+                                            'стороны. В ответе используй разметку MarkDown, но, по возможности, старайся не отвечать более 4000 символов (требование не жёсткое, а рекомендация).'),
+       (-1003676689309, 1, 'SYSTEM_PROMPT', TRUE, 'Это чат-диалог с анализом. Твоя роль: эксперт. Твоя задача: анализ беседы и ответы на вопросы, заданные именно тебе. Будь минимально вежливым. В вежливости нет истины. Но быть максимально корректным с ' ||
+                                           'логической и фактологической стороны. В ответе используй разметку MarkDown, но, по возможности, старайся не отвечать более 4000 символов (требование не жёсткое, а рекомендация).'),
+       (-1003676689309, 1, 'TEMPERATURE', FALSE, '1.5'),
+       (-1003676689309, 1, 'TEMPERATURE', TRUE, '1.2')
+ON CONFLICT DO NOTHING;

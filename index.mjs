@@ -86,6 +86,8 @@ telegram.bot.command('deepseek', async(ctx) => { deepseek.deepSeekTalks(ctx).the
 
 telegram.bot.command('deepseek_analyse', async(ctx) => { deepseek.deepSeekTalks(ctx, true).then(); });
 
+//telegram.bot.command('ai_settints_show', async(ctx) => { deepseek.deepSeekTalks(ctx, true).then(); });
+
 telegram.bot.action('apply_rules', async(ctx) => {
 	const message = ctx?.update?.callback_query?.message;
 	if(message){
