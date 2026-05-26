@@ -223,15 +223,15 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
 	logger.trace(`SELECT U.ID AS USER_ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE_TEXT
                   FROM MESSAGES M
                            JOIN USERS U ON M.USER_ID = U.ID
-                  WHERE CHAT_ID = $1::BIGINT
-                    AND TIMESTAMP >= NOW() - INTERVAL '${interval ? interval : '2 HOURS'}'
-                  ORDER BY TIMESTAMP;`).then();
+                  WHERE M.CHAT_ID = $1::BIGINT
+                    AND M.TIMESTAMP >= NOW() - INTERVAL '${interval ? interval : '2 HOURS'}'
+                  ORDER BY M.TIMESTAMP;`).then();
 
 	return (await db.query(`SELECT U.ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE
                             FROM MESSAGES M
                                      JOIN USERS U ON M.USER_ID = U.ID
                             WHERE CHAT_ID = $1::BIGINT
-                              AND TIMESTAMP >= NOW() - INTERVAL ${interval ? interval : '2 HOURS'}
+                              AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
                             ORDER BY TIMESTAMP;`,
 		[chat_id]))
 		?.rows?.map(row => {
