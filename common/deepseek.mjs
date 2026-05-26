@@ -171,17 +171,11 @@ export async function sendMessages(messages, analyse, chat_id){
 		let systemPrompt = '';
 		let temperature  = 1.5;
 
-		const _settings = (await query(`SELECT TYPE, VALUE
-                                        FROM AI2CHAT_SETTINGS
-                                        WHERE CHAT_ID = $1::BIGINT AND AI_ID=$2:: INT
-                                          AND REASONER_MODE=$3::BOOL`,
-			[chat_id, 1, !!analyse ? 't' : 'f']));
-		logger.trace('Настройки из для ', [chat_id, 1, !!analyse]).then();
-		logger.trace(_settings).then();
-		_settings?.rows?.map(row => {
-			logger.trace('парсинг', [row]).then();
-			logger.trace(row.type).then();
-			logger.trace(row.value).then();
+		(await query(`SELECT TYPE, VALUE
+                      FROM AI2CHAT_SETTINGS
+                      WHERE CHAT_ID = $1::BIGINT AND AI_ID=$2:: INT
+                        AND REASONER_MODE=$3::BOOL`,
+			[chat_id, 1, !!analyse ? 't' : 'f']))?.rows?.map(row => {
 			switch(row.type){
 				case 'SYSTEM_PROMPT':
 					systemPrompt = row.value;
@@ -192,9 +186,6 @@ export async function sendMessages(messages, analyse, chat_id){
 					break;
 			}
 		});
-
-		logger.trace('системный промпт', [systemPrompt]).then();
-		logger.trace('температура', [temperature]).then();
 
 		if(systemPrompt){
 			messages = [{role: 'system', content: systemPrompt}].concat(messages);
@@ -223,7 +214,6 @@ export async function sendMessages(messages, analyse, chat_id){
 				};
 			}
 
-			logger.trace('Итоговый запрос').then();
 			logger.trace(aiParams).then();
 
 			const completion = await openai.chat.completions.create(aiParams);
