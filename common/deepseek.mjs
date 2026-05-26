@@ -179,9 +179,12 @@ export async function sendMessages(messages, analyse, chat_id){
 		logger.trace('Настройки из для ', [chat_id, 1, !!analyse]).then();
 		logger.trace(_settings).then();
 		_settings?.rows?.map(row => {
+			logger.trace('парсинг', [row]).then();
+			logger.trace(row.type).then();
+			logger.trace(row.value).then();
 			switch(row.type){
 				case 'SYSTEM_PROMPT':
-					systemPrompt = row.valee;
+					systemPrompt = row.value;
 					break;
 
 				case 'TEMPERATURES':
