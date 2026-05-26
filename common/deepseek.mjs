@@ -392,16 +392,16 @@ export const deepSeekSummary = async(ctx, analyse) => {
 				let interval = '';
 				switch(period){
 					case 'm':
-						interval = `${amount} minutes`;
+						interval = `${amount} MINUTE`;
 						break;
 					case 'h':
-						interval = `${amount} hours`;
+						interval = `${amount} HOUR`;
 						break;
 					case 'd':
-						interval = `${amount} days`;
+						interval = `${amount} DAY`;
 						break;
 					default:
-						interval = `2 hours`;
+						interval = `2 HOUR`;
 						break;
 				}
 
