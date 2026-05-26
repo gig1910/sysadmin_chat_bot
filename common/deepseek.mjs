@@ -292,7 +292,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
 					}, 4000);
 
-					const answer = await sendMessages(messages, analyse, chat_id);
+					const answer = await sendMessages(messages, analyse, chat.id);
 
 					// Останавливаем обновление сообщения
 					clearInterval(updater_handler);
