@@ -164,7 +164,7 @@ export const getMessagesReplyLink = async(bot_id, chat_id, from_message_id) => (
      LIMIT 20;`, [from_message_id, chat_id]))?.rows?.map(row => {
 	if(row){
 		// Отрезаем командный текст, если он есть
-		const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
+		const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text?.replace(/\s+/igm, ' '));
 		return {
 			role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
 			name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
@@ -237,7 +237,7 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
 		?.rows?.map(row => {
 			if(row){
 				// Отрезаем командный текст, если он есть
-				const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text.replace(/\s+/igm, ' '));
+				const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text?.replace(/\s+/igm, ' '));
 				return {
 					role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
 					name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
