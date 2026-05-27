@@ -190,6 +190,9 @@ async function sendAnswerIA(ctx, answer){
 	// Обработка ответа
 	const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
+		const botInfo = ctx?.botInfo;
+		const chat = message.chat;
+
 		let mess;
 		if(answer){
 			// Отправляем ответ DeepSeek как ответ на сообщение
@@ -231,6 +234,9 @@ async function sendHelpMessageIA(ctx){
 	// Обработка ответа
 	const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
+		const botInfo = ctx?.botInfo;
+		const chat = message.chat;
+
 		let mess = await telegram.replyMessage(ctx, message?.message_id, 'Привет, я бот-помошник.\n\nЯ могу попробовать ответить на твой вопрос, но для этого Вы должны его задать используя или ответ на это сообщение, или используя формат `/deepseek ВОПРОС`\n\nВы так же можете давать ответ на сообщение в цепочке обсуждения которого есть вопрос ко мне, я тогда проанализирую всю цепочку вопросов-ответов и выдам более релевантный результат.', true);
 		Promise.all(mess).then(mess => {
 			mess?.forEach(m => {
@@ -262,7 +268,6 @@ export async function isSpamMessage(ctx){
 	const message = ctx?.message?.text;
 	if(message){
 		const chat = message.chat;
-		const user = message.from;
 
 		logger.log(`Тест сообщения на спам "${message}"`).then();
 
@@ -289,10 +294,12 @@ export async function testMessage(ctx){
 
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id && message?.text){
+		const chat = message.chat;
+
 		const arr       = (/\/deepseek_test_spam (.*)/gmi).exec(message.text.replace(/\s+/igm, ' '));
 		const _messages = [{role: 'user', content: arr?.length ? arr[1] : message?.text}];
 
-		const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_SPAM, 'Check the message and answer only YES or NO if the message looks like SPAM');
+		const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_TEST_MESSAGE, 'Check the message and answer only YES or NO if the message looks like SPAM');
 
 		return _answer?.content?.toUpperCase().includes('YES') ? 'YES' : 'NO';
 	}
@@ -334,7 +341,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 					const _waitMessage = await showWaitMessage(ctx);
 
 					// Запрашиваем ответ у DeepSeek
-					const answer = await sendMessages2AI(messages, analyse, chat.id);
+					const answer = await sendMessages2AI(AI_ID, messages, chat.id, !!analyse, IS_MESSAGE);
 
 					// Останавливаем обновление сообщения
 					await hideWaitMessage(_waitMessage);
@@ -384,7 +391,7 @@ export const deepSeekSummary = async(ctx) => {
 					period = arr[2].toLowerCase();
 				}
 
-				let interval = '';
+				let interval;
 				switch(period){
 					case 'm':
 						interval = `${amount} MINUTE`;
