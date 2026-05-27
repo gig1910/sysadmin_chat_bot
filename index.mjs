@@ -118,6 +118,34 @@ telegram.bot.command('get_ai_settints', async(ctx) => {
 	}
 });
 
+telegram.bot.command('set_ai_settints', async(ctx) => {
+	telegram.deleteMessage(ctx).then(); // Удаляем команду
+
+	if(await telegram.requireChatAdmin(ctx)){
+		// Очистка текста от самой команды
+		const message = telegram.getCtxMessage(ctx);
+		const msg     = message.text.replace(/^\/set_ai_settints(?:@\w+)?\s*/igm, '').trim();
+
+		// Парсим командный текст по образцу
+		// MODE TYPE VALUE
+		const arr = (/^(true|false)\s+([A-Z_0-9]+)\s+(.*)/igm).exec(msg.replace(/\n/igm, '\\n'));
+		if(arr?.length >= 4 && arr[1] && arr[2] && arr[3]){
+			try{
+				await telegram_db.setChatAISettings(ctx, deepseek.AI_ID, arr[1]?.toLowerCase() === 'true', arr[2]?.toUpperCase().trim(), arr[3]?.trim());
+				return telegram.sendAutoRemoveMsg(ctx, 'Параметр сохранён.');
+
+			}catch(err){
+				logger.err(err).then();
+				return telegram.sendAutoRemoveMsg(ctx, 'Ошибка при сохранении параметра.\nПроверьте логи на сервере для подробностей');
+			}
+
+		}else{
+			return telegram.sendAutoRemoveMsg(ctx, 'Неверная команда. Требуется указать в формате ```MODE NAME VALUE```', true);
+		}
+	}
+});
+
+
 telegram.bot.action('apply_rules', async(ctx) => {
 	const message = telegram.getCtxMessage(ctx);
 	if(message){
