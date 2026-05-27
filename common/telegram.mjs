@@ -1,14 +1,15 @@
-import {Markup, Telegraf}           from 'telegraf';
+import {Markup, Telegraf} from 'telegraf';
+
 import * as logger                  from './logger.mjs';
 import {parseMessageAndSaveByParts} from './parser.mjs';
-import * as telegram_db             from "./telegram_db.mjs";
+import * as telegram_db             from './telegram_db.mjs';
 //----------------------------------
 
-const TELEGRAM_MAX_MESSAGE_LENGTH            = parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 10000;
+const TELEGRAM_MAX_MESSAGE_LENGTH            = Math.min(parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 4000, 4096);
 const TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE = parseInt(process.env.TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE, 10) || 10000;
 const TELEGRAM_TIMEOUT_TO_DELETE_QUESTION    = parseInt(process.env.TELEGRAM_TIMEOUT_TO_DELETE_QUESTION, 10) || 60000;
 
-const ADMIN_STATUSES = new Set(["creator", "administrator"]);
+const ADMIN_STATUSES = new Set(['creator', 'administrator']);
 
 //----------------------------------
 
@@ -28,7 +29,7 @@ export const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${
  * @param {CTX} ctx
  * @returns {Message|null}
  */
-export const getCtxMessage = (ctx) => ctx?.update?.message || ctx?.update?.edited_message || ctx?.update?.callback_query?.message || null;
+export const getCtxMessage = (ctx) => ctx?.update?.callback_query?.message || ctx?.update?.edited_message || ctx?.update?.message || null;
 
 /**
  * Получение данных чата из CTX
@@ -42,7 +43,11 @@ export const getChatFromCtx = (ctx) => getCtxMessage(ctx)?.chat;
  * @param {CTX} ctx
  * @returns {User|null}
  */
-export const getUserFromCtx = (ctx) => getCtxMessage(ctx)?.from;
+export const getUserFromCtx = (ctx) =>
+	ctx?.update?.callback_query?.from ||
+	ctx?.from ||
+	getCtxMessage(ctx)?.from ||
+	null;
 
 /**
  * Удаление сообщения
@@ -51,12 +56,12 @@ export const getUserFromCtx = (ctx) => getCtxMessage(ctx)?.from;
  * @returns {Promise<Boolean>}
  */
 export const deleteMessage = async(ctx, msg_id) => {
-	try{
-		return await ctx.deleteMessage(msg_id || getCtxMessage(ctx)?.message_id);
-
-	}catch(err){
-		logger.warn(err).then();
+	const id = msg_id || getCtxMessage(ctx)?.message_id;
+	if(!id){
+		return null;
 	}
+
+	return ctx.deleteMessage(id).catch((err) => logger.warn(err));
 };
 
 /**
@@ -68,11 +73,11 @@ export const deleteMessage = async(ctx, msg_id) => {
  */
 export const sendMessage = (ctx, message, isMarkdown) => {
 	try{
-		const msg = [];
+		const tasks = [];
 		if(isMarkdown){
 			parseMessageAndSaveByParts(message)?.forEach((message) => {
 				if(message?.message){
-					msg.push(ctx.sendMessage(message.message, {entities: message?.entities}));
+					tasks.push(ctx.sendMessage(message.message, {entities: message?.entities}));
 				}
 			});
 
@@ -80,10 +85,10 @@ export const sendMessage = (ctx, message, isMarkdown) => {
 			while(message){
 				const mess_to_send = message.substring(0, TELEGRAM_MAX_MESSAGE_LENGTH);
 				message            = message.substring(TELEGRAM_MAX_MESSAGE_LENGTH);
-				msg.push(ctx.sendMessage(mess_to_send));
+				tasks.push(ctx.sendMessage(mess_to_send));
 			}
 		}
-		return msg;
+		return Promise.all(tasks);
 
 	}catch(err){
 		logger.warn(err).then();
@@ -163,16 +168,16 @@ export const editMessage = (ctx, chat_id, message_id, message, isMarkdown) => {
  * @return {Promise<[Message.TextMessage]>}
  */
 export const sendAutoRemoveMsg = async(ctx, message, isMarkdown, timeout) => {
-	const msg = sendMessage(ctx, message, isMarkdown);
+	const msgs = await sendMessage(ctx, message, isMarkdown);
 
-	setTimeout(((ctx, msg) => async() => {
-		msg       = await Promise.all(msg);
+	setTimeout(((ctx, msgs) => async() => {
+		msgs      = await Promise.all(msgs);
 		const res = [];
-		msg.forEach(msg => res.push(deleteMessage(ctx, msg?.message_id)));
+		msgs.forEach(msg => res.push(deleteMessage(ctx, msg?.message_id)));
 		return res;
-	})(ctx, msg), timeout || TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE);
+	})(ctx, msgs), timeout || TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE);
 
-	return msg;
+	return msgs;
 };
 
 /**
@@ -319,7 +324,8 @@ export const requireChatAdmin = async(ctx) => {
 		isAdmin = await isCurrentUserChatAdmin(ctx);
 
 	}catch(error){
-		logger.error("Failed to check chat admin:", error).then();
+		logger.err('Failed to check chat admin:').then();
+		logger.err(error).then();
 		await sendAutoRemoveMsg(ctx, 'Не удалось проверить права администратора. Проверь, что бот добавлен в чат и имеет права администратора.');
 
 		return false;

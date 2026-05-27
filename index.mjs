@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 import * as db     from './common/db.mjs';
 import * as logger from './common/logger.mjs';
 
@@ -21,26 +23,28 @@ telegram.bot.start(async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Welcome'));
 telegram.bot.help(async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Bot for telergam SysAdminChat'));
 
 telegram.bot.command('getchatid', async(ctx) => {
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-
+	let res;
 	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
 	if(message?.message_id){
 		/** @type {Chat} */ const chat = telegram.getChatFromCtx(ctx);
 		/** @type {From} */ const user = telegram.getUserFromCtx(ctx);
 
 		if(chat?.id && user?.id){
-			return telegram.sendAutoRemoveMsg(ctx, `userID: ${user?.id}; chatID: ${chat?.id}`, false, 5000);
+			res = telegram.sendAutoRemoveMsg(ctx, `userID: ${user?.id}; chatID: ${chat?.id}`, false, 5000);
 
 		}
 	}
+
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	return res;
 });
 
 telegram.bot.command('question', async(ctx) => {
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	let res;
 
 	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
 	if(message?.message_id){
-		return telegram.sendMessage(ctx,
+		res = telegram.sendMessage(ctx,
 			`*Как правильно задавать вопрос.*
 
 1. Укажите именно суть вопроса.
@@ -67,40 +71,50 @@ telegram.bot.command('question', async(ctx) => {
 			true
 		);
 	}
+
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	return res;
 });
 
 telegram.bot.command('deepseek_test_spam', async(ctx) => {
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	let res;
 
 	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
 	if(message && message.message_id && message?.text){
 		const answer = await deepseek.testMessage(ctx);
 
-		return telegram.replyMessage(ctx,
+		res = telegram.replyMessage(ctx,
 			message.message_id,
 			answer || 'NOT_ANSWER',
 			false);
 	}
+
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	return res;
 });
 
 telegram.bot.command('deepseek', async(ctx) => {
+	const res = deepseek.deepSeekTalks(ctx);
+
 	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-	return deepseek.deepSeekTalks(ctx);
+	return res;
 });
 
 telegram.bot.command('deepseek_analyse', async(ctx) => {
+	const res = deepseek.deepSeekTalks(ctx, true);
+
 	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-	return deepseek.deepSeekTalks(ctx, true);
+	return res;
 });
 
 telegram.bot.command('deepseek_summary', async(ctx) => {
+	const res = deepseek.deepSeekSummary(ctx, true);
+
 	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-	return deepseek.deepSeekSummary(ctx, true);
+	return res;
 });
 
 telegram.bot.command('get_ai_settints', async(ctx) => {
-	telegram.deleteMessage(ctx).then(); // Удаляем команду
-
 	if(await telegram.requireChatAdmin(ctx)){
 		telegram.sendAutoRemoveMsg(ctx, 'Текущие настройки АИ для чата:').then();
 		telegram.sendAutoRemoveMsg(ctx, 'Режим чата:').then();
@@ -110,17 +124,17 @@ telegram.bot.command('get_ai_settints', async(ctx) => {
 			telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
 		}
 		telegram.sendAutoRemoveMsg(ctx, `Режим аналитики:`).then();
-		settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
+		settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, true))?.rows;
 		for(let i = 0; i < settings?.length; i++){
 			const setting = settings[i];
 			telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
 		}
 	}
+
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 });
 
 telegram.bot.command('set_ai_settints', async(ctx) => {
-	telegram.deleteMessage(ctx).then(); // Удаляем команду
-
 	if(await telegram.requireChatAdmin(ctx)){
 		// Очистка текста от самой команды
 		const message = telegram.getCtxMessage(ctx);
@@ -143,6 +157,8 @@ telegram.bot.command('set_ai_settints', async(ctx) => {
 			return telegram.sendAutoRemoveMsg(ctx, 'Неверная команда. Требуется указать в формате ```MODE NAME VALUE```', true);
 		}
 	}
+
+	telegram.deleteMessage(ctx).then(); // Удаляем команду
 });
 
 
@@ -150,7 +166,7 @@ telegram.bot.action('apply_rules', async(ctx) => {
 	const message = telegram.getCtxMessage(ctx);
 	if(message){
 		const chat = telegram.getChatFromCtx(ctx);
-		const user = telegram.getUserFromCtx(ctx);
+		const user = ctx?.update?.callback_query?.from; // Тут именно НАЖАВШИЙ кнопку
 
 		if(chat?.id && user?.id){
 			// Сохраняем сообщение
@@ -171,44 +187,40 @@ telegram.bot.action('apply_rules', async(ctx) => {
 	}
 });
 
-telegram.bot.on('new_chat_members', async(ctx) => {
-	const arr = [];
+telegram.bot.action('reject_rules', async(ctx) => {
+	await ctx.answerCbQuery('Неверный ответ.');
+});
 
-	for(let i = 0; i < ctx?.message?.new_chat_members; i++){
-		const user = telegram.getCtxMessage(ctx)?.new_chat_members[i];
-		arr.push(telegram.sendNewUserQuestion(ctx, user));
-	}
+telegram.bot.on('new_chat_members', async(ctx) => {
+	const message = telegram.getCtxMessage(ctx);
+	const users   = message?.new_chat_members ?? [];
+
+	const arr = users.map((user) => telegram.sendNewUserQuestion(ctx, user));
 
 	await Promise.all(arr).catch(console.error);
 });
 
 telegram.bot.on('left_chat_member', async(ctx) => {
-	const arr = [];
 	logger.log('left_chat_member').then();
 
-	const func = async(user) => {
-		const message = telegram.getCtxMessage(ctx);
-		const chat    = telegram.getChatFromCtx(ctx);
+	const message = telegram.getCtxMessage(ctx);
+	const chat    = telegram.getChatFromCtx(ctx);
+	const user    = message?.left_chat_member;
 
-		await Promise.all([
-			telegram_db.addChat2DB(chat),
-			telegram_db.addUser2DB(user),
-			telegram_db.removeUserFromChat2DB(chat?.id, user?.id)
-		]).catch(console.error);
-
-		// Сохраняем сообщение
-		return Promise.all([
-			telegram_db.addMessage2DB(ctx, chat, user, message),
-			telegram.deleteMessage(ctx, ctx?.message?.id)
-		]).catch(console.error);
-	};
-
-	for(let i = 0; i < ctx?.message?.left_chat_member; i++){
-		const user = ctx?.message?.left_chat_member[i];
-		arr.push(func(user));
+	if(!user){
+		return;
 	}
 
-	return Promise.all(arr).catch(console.error);
+	await Promise.all([
+		telegram_db.addChat2DB(chat),
+		telegram_db.addUser2DB(user),
+		telegram_db.removeUserFromChat2DB(chat?.id, user?.id)
+	]).catch(console.error);
+
+	await Promise.all([
+		telegram_db.addMessage2DB(ctx, chat, user, message),
+		telegram.deleteMessage(ctx)
+	]).catch(console.error);
 });
 
 /*
@@ -239,7 +251,7 @@ telegram.bot.on([
 		const userState = await telegram_db.getUserStateFromChat(chat, user);
 		if(userState?.blocked){
 			// Пользователь УЖЕ заблокирован. Просто удаляем его сообщение
-			return telegram.deleteMessage(ctx, message.message_id);
+			return telegram.deleteMessage(ctx);
 
 		}else if(typeof (userState?.new_user) !== 'boolean'){
 			// добавляем участника в чат как нового
@@ -258,7 +270,7 @@ telegram.bot.on([
 		}else{              // Сообщение в группу
 			if(userState?.new_user !== false){
 				// Обработка сообщения нового пользователя
-				await telegram.deleteMessage(ctx, message.message_id);
+				await telegram.deleteMessage(ctx);
 
 				if(message?.text){
 
@@ -303,26 +315,28 @@ let process_users_handler;
 
 
 		logger.info('Launch bot...').then();
-		telegram.bot.launch().then();
-		logger.info('Bot is launching.').then();
+		await telegram.bot.launch();
+		logger.info('Bot launched.').then();
 
-		process_users_handler = setInterval(async() => { // Запуск процесса очистки группы от ботов, которые более чем 3 часа не отвечают на запрос принятия правил группы (запуск раз в полчаса)
+		process_users_handler = setInterval(async() => { // Запуск процесса очистки группы от ботов, которые более чем 3 часа не отвечают на запрос принятия правил группы (запуск раз в минуту)
 			logger.info('Start interval function for clear chats...').then();
 
 			logger.info('getting forgotten users from chats...').then();
-			// Получаем список всех пользователей, которые отправили сообщение в чат или вошли в чат, но так и не приняли правила чата (99,9999% что это боты)
-			const users = await telegram_db.getUsers(-1001325427983);
-
-			for(let i = 0; i < users?.rows?.length; i++){
-				const user = users.rows[i];
-				if(user){
-					logger.info(`Blocked user ${user.user_id} in chat ${user.chat_id}...`).then();
-					telegram.removeUserFromChat(null, {id: user.chat_id}, {id: user.user_id}).then();
+			let chats = (await telegram_db.getNotPrivateChats())?.rows;
+			for(let i = 0; i < chats?.length; i++){
+				// Получаем список всех пользователей, которые отправили сообщение в чат или вошли в чат, но так и не приняли правила чата (99,9999% что это боты)
+				const users = await telegram_db.getNewUsersFromChat(chats[i].id);
+				for(let i = 0; i < users?.rows?.length; i++){
+					const user = users.rows[i];
+					if(user){
+						logger.info(`Blocked user ${user.user_id} in chat ${user.chat_id}...`).then();
+						telegram.removeUserFromChat(null, {id: user.chat_id}, {id: user.user_id}).then();
+					}
 				}
 			}
 
 			logger.info('clear chat messages...').then();
-			const chats = await telegram_db.getChatsSettings();
+			chats = await telegram_db.getChatsSettings();
 			for(let i = 0; i < chats?.rows?.length; i++){
 				const chat = chats.rows[i];
 				if(chat?.clear_interval){

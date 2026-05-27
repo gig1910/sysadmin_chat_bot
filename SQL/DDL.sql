@@ -66,6 +66,18 @@ CREATE TABLE IF NOT EXISTS MESSAGES
 );
 CREATE INDEX IDX_MESSAGE_CTX ON MESSAGES USING GIN (CTX);
 
+CREATE TABLE IF NOT EXISTS AIS
+(
+    ID      SERIAL PRIMARY KEY,
+    NAME    TEXT NOT NULL,
+    API_URL TEXT NOT NULL
+);
+INSERT INTO AIS (ID, NAME, API_URL)
+VALUES (1, 'deepseek', 'https://api.deepseek.com'),
+       (2, 'openai', 'https://api.openai.com'),
+       (3, 'groq', 'https://api.groq.com')
+ON CONFLICT DO NOTHING;
+
 CREATE TABLE AI_KINDS
 (
     ID    SMALLSERIAL PRIMARY KEY,
@@ -102,18 +114,6 @@ CREATE TABLE AI_REQUEST
     ERROR             JSONB,
     ERROR_TIMESTAMP   TIMESTAMP
 );
-
-CREATE TABLE IF NOT EXISTS AIS
-(
-    ID      SERIAL PRIMARY KEY,
-    NAME    TEXT NOT NULL,
-    API_URL TEXT NOT NULL
-);
-INSERT INTO AIS (NAME, API_URL)
-VALUES ('deepseek', 'https://api.deepseek.com'),
-       ('openai', 'https://api.openai.com'),
-       ('groq', 'https://api.groq.com')
-ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS AI2CHAT_SETTINGS
 (

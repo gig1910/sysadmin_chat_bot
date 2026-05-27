@@ -1,6 +1,6 @@
-import CircularJSON  from 'circular-json';
+import {stringify}   from 'flatted';
 import * as db       from './db.mjs';
-import * as telegram from "./telegram.mjs";
+import * as telegram from './telegram.mjs';
 
 //-----------------------------------
 
@@ -11,7 +11,7 @@ import * as telegram from "./telegram.mjs";
  * @property type {String
  * @property title {String}
  * @property invite_link {String}
- * @property permission {Object}
+ * @property permissions {Object}
  * @property join_to_send_messages {Boolean}
  * @property max_reaction_count {Number}
  */
@@ -37,7 +37,7 @@ import * as telegram from "./telegram.mjs";
  */
 export const addChat2DB = async chat => db.query(`
             INSERT INTO CHATS(ID, TYPE, TITLE, INVITE_LINK, PERMISSIONS, JOIN_TO_SEND_MESSAGES, MAX_REACTION_COUNT, RAW)
-            VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::BOOL, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
+            VALUES ($1::BIGINT, $2::TEXT, $3::TEXT, $4::TEXT, $5::JSONB, $6::BOOL, $7::INT, $8::JSONB)
             ON CONFLICT(ID) DO UPDATE SET TYPE=EXCLUDED.TYPE,
                                           TITLE=EXCLUDED.TITLE,
                                           INVITE_LINK=EXCLUDED.INVITE_LINK,
@@ -45,7 +45,7 @@ export const addChat2DB = async chat => db.query(`
                                           JOIN_TO_SEND_MESSAGES=EXCLUDED.JOIN_TO_SEND_MESSAGES,
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           RAW=EXCLUDED.RAW;`,
-	[chat?.id, chat?.type, chat?.title, chat?.invite_link, CircularJSON.stringify(chat?.permission), chat?.join_to_send_messages, chat?.max_reaction_count, CircularJSON.stringify(chat)]
+	[chat?.id, chat?.type, chat?.title, chat?.invite_link, stringify(chat?.permissions), chat?.join_to_send_messages, chat?.max_reaction_count, stringify(chat)]
 );
 
 /**
@@ -65,7 +65,7 @@ export const addUser2DB = async user => db.query(`
                                           HAS_PRIVATE_FORWARDS=EXCLUDED.HAS_PRIVATE_FORWARDS,
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           RAW=EXCLUDED.RAW;`,
-	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, CircularJSON.stringify(user)]
+	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, stringify(user)]
 );
 
 /**
@@ -129,7 +129,7 @@ export const addMessage2DB = async(ctx, chat, user, message) => db.query(`
             INSERT INTO MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, ($5::JSONB - 'telegram'))
             ON CONFLICT DO NOTHING;`,
-	[message?.message_id, chat?.id, user?.id, CircularJSON.stringify(message), CircularJSON.stringify(ctx)]);
+	[message?.message_id, chat?.id, user?.id, stringify(message), stringify(ctx)]);
 
 /**
  * Получаем историю сообщений по связке "ответ на" начиная с переданного id
@@ -208,10 +208,18 @@ export const hasDeepSeekTalkMarker = async(chat_id, from_message_id) => !!(await
                          LIMIT 20) _
                    WHERE UPPER(SUBSTRING(MESSAGE_TEXT FROM 1 FOR 9)) = '/DEEPSEEK');`, [from_message_id, chat_id]))?.rows[0].exists;
 
-export const getUsers = async(chat_id) => db.query(`
+export const getNotPrivateChats = async() => db.query(`
+    SELECT ID, TITLE
+    FROM CHATS
+    WHERE UPPER(TYPE) <> 'PRIVATE'
+    ORDER BY ID;`);
+
+export const getNewUsersFromChat = async(chat_id) => db.query(`
     SELECT UC.CHAT_ID, UC.USER_ID
     FROM USERS_CHATS UC
-             JOIN MESSAGES M ON UC.USER_ID = M.USER_ID
+             JOIN MESSAGES M
+                  ON UC.USER_ID = M.USER_ID
+                      AND UC.CHAT_ID = M.CHAT_ID
     WHERE UC.CHAT_ID = $1::BIGINT
       AND UC.NEW_USER
       AND NOT UC.IS_BLOCKED
@@ -219,33 +227,29 @@ export const getUsers = async(chat_id) => db.query(`
     HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
     ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`, [chat_id]);
 
-export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
+export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval = '2 HOURS') =>
 	(await db.query(`
                 SELECT U.ID AS USER_ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE_TEXT
                 FROM MESSAGES M
-                         JOIN USERS U
-                              ON M.USER_ID = U.ID
-                WHERE CHAT_ID = $1::BIGINT
-                  AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
-                  AND NOT (M.MESSAGE ->> 'text' ~* '^/') -- Убираем вызовы команд бота
-                ORDER BY TIMESTAMP;`,
-		[chat_id]))
-		?.rows?.map(row => {
-		if(row){
-			// Отрезаем командный текст, если он есть
-			const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text?.replace(/\s+/igm, ' '));
-			return {
-				role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
-				name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
-				content: arr ? arr[1] : row.message_text
-			};
+                         JOIN USERS U ON M.USER_ID = U.ID
+                WHERE M.CHAT_ID = $1::BIGINT
+                  AND M.TIMESTAMP >= NOW() - $2::INTERVAL
+                  AND NOT (M.MESSAGE ->> 'text' ~* '^/')
+                ORDER BY M.TIMESTAMP;`,
+		[chat_id, interval]
+	))?.rows?.map(row => {
+		const content = row.message_text;
+		const msg     = {
+			role: parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user',
+			content
+		};
 
-		}else{
-			return null;
+		if(msg.role === 'user' && row.username){
+			msg.name = row.username;
 		}
-	})
-		.filter(row => !!row)
-		?.filter(mess => !!mess?.content);
+
+		return msg;
+	}).filter(mess => !!mess?.content);
 
 export const getChatsSettings = async(chat_id) => db.query(`
     SELECT ID, CLEAR_INTERVAL::TEXT AS CLEAR_INTERVAL

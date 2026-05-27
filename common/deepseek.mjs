@@ -1,7 +1,7 @@
-import OpenAI           from "openai";
-import logger           from "./logger.mjs";
-import * as telegram    from "./telegram.mjs";
-import * as telegram_db from "./telegram_db.mjs";
+import OpenAI           from 'openai';
+import logger           from './logger.mjs';
+import * as telegram    from './telegram.mjs';
+import * as telegram_db from './telegram_db.mjs';
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -47,7 +47,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 		// Сохраняем запрос в БД
 		const _id = await telegram_db.insertAIRequest(ai_id, queryType, AI_MODEL_CHAT, messages);
 
-		logger.log(`Отправка сообщений:"`).then();
+		logger.log(`Отправка сообщений:'`).then();
 		logger.log(`ID: ${_id}`).then();
 
 		// Получаем блок настроек для чата/AI (Если сознательно не передали свой)
@@ -60,8 +60,11 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 						systemPrompt = row.value;
 						break;
 
-					case 'TEMPERATURES':
+					case 'TEMPERATURE':
 						temperature = parseFloat(row.value);
+						if(!Number.isFinite(temperature)){
+							temperature = analyse ? 1 : 0.85;
+						}
 						break;
 				}
 			});
@@ -81,7 +84,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 			};
 
 			if(!!analyse){
-				aiParams.thinking         = {"type": "enabled"};
+				aiParams.thinking         = {'type': 'enabled'};
 				aiParams.reasoning_effort = 'high';
 				aiParams.temperature      = temperature || 1;
 			}
@@ -248,11 +251,11 @@ export async function isSpamMessage(ctx){
 		return false;
 	}
 
-	const message = ctx?.message?.text;
+	const message = telegram.getCtxMessage(ctx)?.text;
 	if(message){
-		const chat = message.chat;
+		const chat = telegram.getChatFromCtx(ctx);
 
-		logger.log(`Тест сообщения на спам "${message}"`).then();
+		logger.log(`Тест сообщения на спам '${message}'`).then();
 
 		const _messages = [{role: 'user', content: message}];
 
@@ -369,9 +372,9 @@ export const deepSeekSummary = async(ctx) => {
 			const chat = message.chat;
 			const user = message.from;
 
-			const text = message.text.replace(/^\/summary(?:@\w+)?\s*/igm, '').trim();
+			const text = message.text.replace(/^\/deepseek_summary(?:@\w+)?\s*/igm, '').trim();
 			if(text){
-				const re   = /(\d)([hmd])/igm;
+				const re   = /(\d+)([hmd])/igm;
 				const arr  = re.exec(text);
 				let amount = 2;
 				let period = 'h';

@@ -2,7 +2,7 @@
 
 import MarkdownIt from 'markdown-it';
 
-const TELEGRAM_MAX_MESSAGE_LENGTH = parseInt(process.env.TELEGRAM_MAX_MESSAGES_LENGTH, 10) || 4000;
+const TELEGRAM_MAX_MESSAGE_LENGTH = parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 4000;
 
 //--------------------------------------------
 
