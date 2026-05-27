@@ -227,7 +227,7 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
                               ON M.USER_ID = U.ID
                 WHERE CHAT_ID = $1::BIGINT
                   AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
-                  AND M.MESSAGE ->> 'text' NOT LIKE '@sysadmin_chat_bot%' -- Убираем вызовы команд бота
+                  AND NOT (M.MESSAGE ->> 'text' ~* '^/') -- Убираем вызовы команд бота
                 ORDER BY TIMESTAMP;`,
 	[chat_id]))
 	?.rows?.map(row => {
