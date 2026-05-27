@@ -128,7 +128,7 @@ telegram.bot.command('set_ai_settints', async(ctx) => {
 
 		// Парсим командный текст по образцу
 		// MODE TYPE VALUE
-		const arr = (/^(true|false)\s+([A-Z_0-9]+)\s+(.*)/igm).exec(msg.replace(/\n/igm, '\\n'));
+		const arr = (/^(true|false)\s+(SYSTEM_PROMPT|SUMMARY_PROMPT|TEST_SPAM_PROMPT|TEMPERATURE)\s+(.*)/igm).exec(msg.replace(/\n/igm, '\\n'));
 		if(arr?.length >= 4 && arr[1] && arr[2] && arr[3]){
 			try{
 				await telegram_db.setChatAISettings(ctx, deepseek.AI_ID, arr[1]?.toLowerCase() === 'true', arr[2]?.toUpperCase().trim(), arr[3]?.trim());
