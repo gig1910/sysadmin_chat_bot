@@ -431,6 +431,7 @@ export const deepSeekSummary = async(ctx, analyse) => {
 					}, 4000);
 
 					let answer = {};
+					let _id;
 
 					try{
 						let aiParams = {
@@ -461,7 +462,7 @@ export const deepSeekSummary = async(ctx, analyse) => {
 
 						const completion = await openai.chat.completions.create(aiParams);
 						const _answer    = completion.choices[0].message;
-						await query(`UPDATE AI_REQUEST
+						_id = await query(`UPDATE AI_REQUEST
                                      SET ANSWER = $1::JSONB,
                              ANSWER_TIMESTAMP = NOW()
                                      WHERE ID = $2:: INT;`, [JSON.stringify(completion, null, ''), _id]
@@ -470,7 +471,7 @@ export const deepSeekSummary = async(ctx, analyse) => {
 						logger.trace(`Ответ:`).then();
 						logger.dir(_answer).then();
 
-						return _answer;
+						answer = _answer;
 
 					}catch(err){
 						logger.err(err).then();
