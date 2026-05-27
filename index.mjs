@@ -108,7 +108,8 @@ telegram.bot.command('deepseek_analyse', async(ctx) => {
 });
 
 telegram.bot.command('deepseek_summary', async(ctx) => {
-	const res = deepseek.deepSeekSummary(ctx, true);
+	logger.log(`Команда 'deepseek_summary'`);
+	const res = deepseek.deepSeekSummary(ctx);
 
 	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 	return res;

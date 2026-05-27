@@ -372,7 +372,7 @@ export const deepSeekSummary = async(ctx) => {
 			const chat = message.chat;
 			const user = message.from;
 
-			const text = message.text.replace(/^\/deepseek_summary(?:@\w+)?\s*/igm, '').trim();
+			const text = message.text.replace(/^\/deepseek_summary(?:@\w+)?\s*/igm, '').trim() || '2h';
 			if(text){
 				const re   = /(\d+)([hmd])/igm;
 				const arr  = re.exec(text);
