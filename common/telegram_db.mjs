@@ -248,15 +248,16 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
 		?.filter(mess => !!mess?.content);
 
 export const getChatsSettings = async(chat_id) => db.query(`
-    SELECT ID, CLEAR_INTERVAL::TEXT AS CLEAR_INTERVAL 
+    SELECT ID, CLEAR_INTERVAL::TEXT AS CLEAR_INTERVAL
     FROM CHATS
     ORDER BY ID;`);
 
 export const removeMessages = async(chat_id, interval) => chat_id && interval && db.query(`
-    WITH DEL AS (
-        DELETE FROM MESSAGES WHERE CHAT_ID = $1::BIGINT AND TIMESTAMP < NOW() - $2::INTERVAL RETURNING MESSAGES.MESSAGE_ID)
-    SELECT COUNT(*)
-    FROM DEL;`);
+            WITH DEL AS (
+                DELETE FROM MESSAGES WHERE CHAT_ID = $1::BIGINT AND TIMESTAMP < NOW() - $2::INTERVAL RETURNING MESSAGES.MESSAGE_ID)
+            SELECT COUNT(*)
+            FROM DEL;`,
+	[chat_id, interval]);
 
 export const getChatAISettings = async(ctx, ai_id, analise, type) =>
 	type ? db.query(`SELECT VALUE
