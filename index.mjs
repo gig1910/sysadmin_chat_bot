@@ -1,13 +1,9 @@
 import * as db     from './common/db.mjs';
 import * as logger from './common/logger.mjs';
 
-import * as deepseek from './common/deepseek.mjs';
-
-import * as telegram                                                     from './common/telegram.mjs';
-import * as telegram_db                                                  from './common/telegram_db.mjs';
-import {getChatAISettings, getChatsSettings}                             from "./common/telegram_db.mjs";
-import {getChatFromCtx, getCtxMessage, getUserFromCtx, requireChatAdmin} from "./common/telegram.mjs";
-import {AI_ID}                                                           from "./common/deepseek.mjs";
+import * as telegram    from './common/telegram.mjs';
+import * as telegram_db from './common/telegram_db.mjs';
+import * as deepseek    from './common/deepseek.mjs';
 
 //-----------------------------
 
@@ -27,8 +23,8 @@ telegram.bot.help(async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Bot for telerga
 telegram.bot.command('getchatid', async(ctx) => {
 	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
-		/** @type {Chat} */ const chat = getChatFromCtx(ctx);
-		/** @type {From} */ const user = getUserFromCtx(ctx);
+		/** @type {Chat} */ const chat = telegram.getChatFromCtx(ctx);
+		/** @type {From} */ const user = telegram.getUserFromCtx(ctx);
 
 		telegram.deleteMessage(ctx, message?.message_id).then(); // Удаляем командное сообщение
 
@@ -92,15 +88,15 @@ telegram.bot.command('deepseek_analyse', async(ctx) => { deepseek.deepSeekTalks(
 telegram.bot.command('deepseek_summary', async(ctx) => { deepseek.deepSeekSummary(ctx, true).then(); });
 
 telegram.bot.command('get_ai_settints', async(ctx) => {
-	if(await requireChatAdmin(ctx)){
+	if(await telegram.requireChatAdmin(ctx)){
 		let msg      = 'Текущие настройки АИ для чата:\n-------------------------------\n';
 		msg += 'Режим чата:\n';
-		let settings = (await getChatAISettings(ctx, AI_ID, false))?.rows;
+		let settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
 		for(let i = 0; i < settings?.length; i++){
 			msg += `${settings[i].type}: ${'`' + settings[i].type + '`'}\n`;
 		}
 		msg += '\nРежим аналитики:\n';
-		settings = (await getChatAISettings(ctx, AI_ID, false))?.rows;
+		settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
 		for(let i = 0; i < settings?.length; i++){
 			msg += `${settings[i].type}: ${'`' + settings[i].type + '`'}\n`;
 		}
@@ -150,8 +146,8 @@ telegram.bot.on('left_chat_member', async(ctx) => {
 	logger.log('left_chat_member').then();
 
 	const func = async(user) => {
-		const message = getCtxMessage(ctx);
-		const chat    = getChatFromCtx(ctx);
+		const message = telegram.getCtxMessage(ctx);
+		const chat    = telegram.getChatFromCtx(ctx);
 
 		await Promise.all([
 			telegram_db.addChat2DB(chat),
@@ -286,7 +282,7 @@ let process_users_handler;
 			}
 
 			logger.info('clear chat messages...').then();
-			const chats = await getChatsSettings();
+			const chats = await telegram_db.getChatsSettings();
 			for(let i = 0; i < chats?.rows?.length; i++){
 				const chat = chats.rows[i];
 				if(chat?.clear_interval){

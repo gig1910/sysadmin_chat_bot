@@ -1,7 +1,6 @@
-import CircularJSON     from 'circular-json';
-import * as db          from './db.mjs';
-import logger           from "./logger.mjs";
-import {getChatFromCtx} from "./telegram.mjs";
+import CircularJSON  from 'circular-json';
+import * as db       from './db.mjs';
+import * as telegram from "./telegram.mjs";
 
 //-----------------------------------
 
@@ -266,16 +265,16 @@ export const getChatAISettings = async(ctx, ai_id, analise, type) =>
                        AND CHAT_ID = $2::BIGINT
                        AND REASONER_MODE = $3::BOOL
                        AND TYPE = $4::TEXT
-                     LIMIT 1;`, [ai_id, getChatFromCtx(ctx)?.id, !!analise, type])
+                     LIMIT 1;`, [ai_id, telegram.getChatFromCtx(ctx)?.id, !!analise, type])
 		: db.query(`SELECT VALUE
                     FROM AI2CHAT_SETTINGS
                     WHERE AI_ID = $1::INT
                       AND CHAT_ID = $2::BIGINT
                       AND REASONER_MODE = $3::BOOL
-                    ORDER BY TYPE;`, [ai_id, getChatFromCtx(ctx)?.id, !!analise]);
+                    ORDER BY TYPE;`, [ai_id, telegram.getChatFromCtx(ctx)?.id, !!analise]);
 
 export const setChatAISettings = async(ctx, ai_id, analise, type, value) => {
-	const chat = getChatFromCtx(ctx);
+	const chat = telegram.getChatFromCtx(ctx);
 	if(ai_id && !isNaN(chat?.id) && type){
 		return db.query(`
                     WITH INS AS (
@@ -300,7 +299,7 @@ export const insertAIRequest = async(ai_id, ai_kind, ai_model, messages) =>
 
 export const updateAIRequest = async(id, response, error) =>
 	response ? (await db.query(`UPDATE AI_REQUEST
-                                SET ANSWER = $1::JSONB,
+                                SET ANSWER           = $1::JSONB,
                                     ANSWER_TIMESTAMP = NOW()
                                 WHERE ID = $2:: INT;`, [JSON.stringify(response, null, ''), id]))
 		: error ? (await db.query(`UPDATE AI_REQUEST

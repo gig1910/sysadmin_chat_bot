@@ -2,7 +2,6 @@ import {Markup, Telegraf}           from 'telegraf';
 import * as logger                  from './logger.mjs';
 import {parseMessageAndSaveByParts} from './parser.mjs';
 import * as telegram_db             from "./telegram_db.mjs";
-import telegram                     from "telegraf/src/telegram";
 //----------------------------------
 
 const TELEGRAM_MAX_MESSAGE_LENGTH            = parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 10000;

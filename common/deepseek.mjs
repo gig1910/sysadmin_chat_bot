@@ -1,11 +1,7 @@
-import OpenAI                                                                   from "openai";
-import logger                                                                   from "./logger.mjs";
-import * as telegram                                                            from "./telegram.mjs";
-import * as telegram_db                                                         from "./telegram_db.mjs";
-import * as db                                                                  from "./db.mjs";
-import {getChatFromCtx, getCtxMessage}                                          from "./telegram.mjs";
-import {getChatAISettings, insertAIRequest, setChatAISettings, updateAIRequest} from "./telegram_db.mjs";
-import {rows}                                                                   from "pg/lib/defaults.js";
+import OpenAI           from "openai";
+import logger           from "./logger.mjs";
+import * as telegram    from "./telegram.mjs";
+import * as telegram_db from "./telegram_db.mjs";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -49,7 +45,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 
 	if(messages?.length > 0){
 		// Сохраняем запрос в БД
-		const _id = await insertAIRequest(ai_id, queryType, AI_MODEL_CHAT, messages);
+		const _id = await telegram_db.insertAIRequest(ai_id, queryType, AI_MODEL_CHAT, messages);
 
 		logger.log(`Отправка сообщений:"`).then();
 		logger.log(`ID: ${_id}`).then();
@@ -57,7 +53,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 		// Получаем блок настроек для чата/AI (Если сознательно не передали свой)
 		let temperature = 1;
 		if(!systemPrompt){
-			(await getChatAISettings(ctx, ai_id, !!analyse))
+			(await telegram_db.getChatAISettings(ctx, ai_id, !!analyse))
 				?.rows?.map(row => {
 				switch(row.type){
 					case 'SYSTEM_PROMPT':
@@ -96,7 +92,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 			const _answer    = completion.choices[0].message;
 
 			// Сохраняем ответ от AI
-			updateAIRequest(_id, completion).then();
+			telegram_db.updateAIRequest(_id, completion).then();
 
 			logger.trace(`Ответ:`).then();
 			logger.dir(_answer).then();
@@ -107,7 +103,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 			logger.err(err).then();
 			if(_id){
 				// Сохраняем ошибку от AI
-				updateAIRequest(_id, null, err).then();
+				telegram_db.updateAIRequest(_id, null, err).then();
 			}
 
 			return null;
@@ -125,8 +121,8 @@ async function showWaitMessage(ctx){
 	if(ctx){
 		const res = {};
 
-		const message = getCtxMessage(ctx);
-		const chat    = getChatFromCtx(ctx);
+		const message = telegram.getCtxMessage(ctx);
+		const chat    = telegram.getChatFromCtx(ctx);
 
 		let _symb           = `🔃️`;
 		res.ctx             = ctx;
@@ -175,7 +171,7 @@ async function hideWaitMessage(waitMessageStruct){
  */
 async function sendAnswerIA(ctx, answer){
 	// Обработка ответа
-	const message = getCtxMessage(ctx);
+	const message = telegram.getCtxMessage(ctx);
 	if(message?.message_id){
 		const botInfo = ctx?.botInfo;
 		const chat    = message.chat;
@@ -219,7 +215,7 @@ async function sendAnswerIA(ctx, answer){
  */
 async function sendHelpMessageIA(ctx){
 	// Обработка ответа
-	const message = getCtxMessage(ctx);
+	const message = telegram.getCtxMessage(ctx);
 	if(message?.message_id){
 		const botInfo = ctx?.botInfo;
 		const chat    = message.chat;
@@ -260,7 +256,7 @@ export async function isSpamMessage(ctx){
 
 		const _messages = [{role: 'user', content: message}];
 
-		const spamPrompt = (await getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
+		const spamPrompt = (await telegram_db.getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
 		                   'Check the message and answer only YES or NO if the message looks like SPAM';
 		const _answer    = await sendMessages2AI(ctx, AI_ID, _messages, chat?.id, false, IS_SPAM, spamPrompt);
 
@@ -281,7 +277,7 @@ export async function testMessage(ctx){
 		return null;
 	}
 
-	/** @type {Message|Edited_Message} */ const message = getCtxMessage(ctx);
+	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
 	if(message?.message_id && message?.text){
 		const chat = message.chat;
 
@@ -289,7 +285,7 @@ export async function testMessage(ctx){
 		if(arr?.[1]){
 			const _messages = [{role: 'user', content: arr[1]}];
 
-			const spamPrompt = (await getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
+			const spamPrompt = (await telegram_db.getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
 			                   'Check the message and answer only YES or NO if the message looks like SPAM';
 			const _answer    = await sendMessages2AI(ctx, AI_ID, _messages, chat?.id, false, IS_TEST_MESSAGE, spamPrompt);
 
@@ -312,7 +308,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 		return null;
 	}
 
-	const message = getCtxMessage(ctx);
+	const message = telegram.getCtxMessage(ctx);
 	if(message && message?.message_id && message?.text){
 		// Очистка запроса от текста команды
 		const botInfo = ctx?.botInfo;
@@ -365,7 +361,7 @@ export const deepSeekSummary = async(ctx) => {
 		return null;
 	}
 
-	const message = getCtxMessage(ctx);
+	const message = telegram.getCtxMessage(ctx);
 	if(message && message?.message_id && message?.text){
 		// Очистка запроса от текста команды
 		const botInfo = ctx?.botInfo;
@@ -407,7 +403,7 @@ export const deepSeekSummary = async(ctx) => {
 				// Получаем историю сообщений
 				const messages = await telegram_db.getMessagesFromChatByInterval(message.chat?.id, ctx?.botInfo?.id, interval);
 				if(messages?.length > 0){
-					const summaryPrompt = (await getChatAISettings(ctx, AI_ID, false, 'SUMMARY_PROMPT'))?.rows?.[0]?.value;
+					const summaryPrompt = (await telegram_db.getChatAISettings(ctx, AI_ID, false, 'SUMMARY_PROMPT'))?.rows?.[0]?.value;
 					if(summaryPrompt){
 						// Уведомляем, что получили запрос и начали готовить ответ
 						const _waitMessage = await showWaitMessage(ctx);
