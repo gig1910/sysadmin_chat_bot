@@ -4,6 +4,7 @@ import * as telegram                   from "./telegram.mjs";
 import * as telegram_db                from "./telegram_db.mjs";
 import {query}                         from "./db.mjs";
 import {getMessagesFromChatByInterval} from "./telegram_db.mjs";
+import context                         from "telegraf/src/context";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -205,14 +206,14 @@ export async function sendMessages(messages, analyse, chat_id, systemPrompt){
 					model:            AI_CHAT_MODEL,
 					thinking:         {"type": "enabled"},
 					reasoning_effort: "high",
-					temperature:      temperature || 1.2,
+					temperature:      temperature || 1,
 				};
 
 			}else{
 				aiParams = {
 					messages,
 					model:       AI_CHAT_MODEL,
-					temperature: temperature || 1.5,
+					temperature: temperature || 0.85,
 				};
 			}
 
@@ -431,17 +432,60 @@ export const deepSeekSummary = async(ctx, analyse) => {
 						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
 					}, 4000);
 
-					const answer = await sendMessages(messages, analyse, chat.id,
-						'Ты — аналитический ассистент. Твоя задача — изучить переданный массив сообщений и составить каткое, емкое текстовое резюме (summary) диалога, структурированное по ролям.\n' +
-						'Используй Markdown для оформления. Твой ответ должен состоять только из блоков по каждому участнику.\n' +
-						'Правила анализа и оформления:\n' +
-						'1. Выдели каждого уникального участника по полю "name" (или "role", если "name" отсутствует).\n' +
-						'2. Для каждого участника создай заголовок: `### Участник: [Имя/Роль]`\n' +
-						'3. Ниже заголовка списком перечисли ключевую суть его сообщений: тезисы, запросы, предложения, обязательства или принятые решения.\n' +
-						'4. Полностью игнорируй флуд, приветствия, вежливость и неважные детали. Только сухие факты.\n' +
-						'5. Если участник просто поддакивал или не нес смысловой нагрузки, не добавляй его в финальный текст.\n' +
-						'6. В самом конце добавь блок `### Итог диалога:` с главным результатом беседы в 1–2 предложениях.\n' +
-						'Пиши строго по делу, без вводных фраз в начале ответа.\n');
+					let answer = {};
+
+					try{
+						let aiParams = {
+							    messages:    [
+								    {
+									    role:    'system',
+									    content: 'Ты — аналитический ассистент. Твоя задача — изучить переданный массив сообщений и составить каткое, емкое текстовое резюме (summary) диалога, структурированное по ролям.\n' +
+									             'Используй Markdown для оформления. Твой ответ должен состоять только из блоков по каждому участнику.\n' +
+									             'Правила анализа и оформления:\n' +
+									             '1. Выдели каждого уникального участника по полю "name" (или "role", если "name" отсутствует).\n' +
+									             '2. Для каждого участника создай заголовок: `### Участник: [Имя/Роль]`\n' +
+									             '3. Ниже заголовка списком перечисли ключевую суть его сообщений: тезисы, запросы, предложения, обязательства или принятые решения.\n' +
+									             '4. Полностью игнорируй флуд, приветствия, вежливость и неважные детали. Только сухие факты.\n' +
+									             '5. Если участник просто поддакивал или не нес смысловой нагрузки, не добавляй его в финальный текст.\n' +
+									             '6. В самом конце добавь блок `### Итог диалога:` с главным результатом беседы в 1–2 предложениях.\n' +
+									             'Пиши строго по делу, без вводных фраз в начале ответа.'
+								    },
+								    {
+									    role: 'user',
+									    content:
+									          `Проанализируй этот JSON-массив сообщений:\n\n${JSON.stringify(messages, null, 2)}`
+								    }],
+							    model:       AI_CHAT_MODEL,
+							    temperature: 0.2,
+						    };
+
+						logger.trace(aiParams).then();
+
+						const completion = await openai.chat.completions.create(aiParams);
+						const _answer    = completion.choices[0].message;
+						await query(`UPDATE AI_REQUEST
+                                     SET ANSWER = $1::JSONB,
+                             ANSWER_TIMESTAMP = NOW()
+                                     WHERE ID = $2:: INT;`, [JSON.stringify(completion, null, ''), _id]
+						);
+
+						logger.trace(`Ответ:`).then();
+						logger.dir(_answer).then();
+
+						return _answer;
+
+					}catch(err){
+						logger.err(err).then();
+						if(_id){
+							await query(`UPDATE AI_REQUEST
+                                         SET ERROR = $1::JSONB,
+                                 ERROR_TIMESTAMP = NOW()
+                                         WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
+							);
+						}
+
+						return null;
+					}
 
 					// Останавливаем обновление сообщения
 					clearInterval(updater_handler);
