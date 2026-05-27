@@ -417,7 +417,7 @@ export const deepSeekSummary = async(ctx) => {
 				const messages = await telegram_db.getMessagesFromChatByInterval(message.chat?.id, ctx?.botInfo?.id, interval);
 				if(messages?.length > 0){
 
-					const summaryPrompt = (await db.query(`'SELECT VALUE FROM AI2CHAT_SETTINGS WHERE AI_ID=$1::INT AND CHAT_ID=$2::BIGINT AND TYPE=$3::TEXT LIMIT 1`,
+					const summaryPrompt = (await db.query(`SELECT VALUE FROM AI2CHAT_SETTINGS WHERE AI_ID=$1::INT AND CHAT_ID=$2::BIGINT AND TYPE=$3::TEXT LIMIT 1`,
 						[AI_ID, chat?.id, 'SUMMARY_PROMPT']))?.rows?.[0]?.value;
 					if(summaryPrompt){
 						// Уведомляем, что получили запрос и начали готовить ответ
