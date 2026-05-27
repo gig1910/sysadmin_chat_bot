@@ -28,7 +28,7 @@ export const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${
  * @param {CTX} ctx
  * @returns {Message|null}
  */
-export const getCtxMessage = (ctx) => ctx?.update?.message || ctx?.update?.edited_message || null;
+export const getCtxMessage = (ctx) => ctx?.update?.message || ctx?.update?.edited_message || ctx?.update?.callback_query?.message || null;
 
 /**
  * Получение данных чата из CTX
@@ -47,12 +47,12 @@ export const getUserFromCtx = (ctx) => getCtxMessage(ctx)?.from;
 /**
  * Удаление сообщения
  * @param {CTX}    ctx
- * @param {Number} msg_id
+ * @param {Number} [msg_id]
  * @returns {Promise<Boolean>}
  */
 export const deleteMessage = async(ctx, msg_id) => {
 	try{
-		return await ctx.deleteMessage(msg_id);
+		return await ctx.deleteMessage(msg_id || getCtxMessage(ctx)?.message_id);
 
 	}catch(err){
 		logger.warn(err).then();

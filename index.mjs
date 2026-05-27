@@ -21,12 +21,12 @@ telegram.bot.start(async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Welcome'));
 telegram.bot.help(async(ctx) => telegram.sendAutoRemoveMsg(ctx, 'Bot for telergam SysAdminChat'));
 
 telegram.bot.command('getchatid', async(ctx) => {
-	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+
+	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
 	if(message?.message_id){
 		/** @type {Chat} */ const chat = telegram.getChatFromCtx(ctx);
 		/** @type {From} */ const user = telegram.getUserFromCtx(ctx);
-
-		telegram.deleteMessage(ctx, message?.message_id).then(); // Удаляем командное сообщение
 
 		if(chat?.id && user?.id){
 			return telegram.sendAutoRemoveMsg(ctx, `userID: ${user?.id}; chatID: ${chat?.id}`, false, 5000);
@@ -36,10 +36,10 @@ telegram.bot.command('getchatid', async(ctx) => {
 });
 
 telegram.bot.command('question', async(ctx) => {
-	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
-	if(message?.message_id){
-		telegram.deleteMessage(ctx, message?.message_id).then(); // Удаляем командное сообщение
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 
+	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
+	if(message?.message_id){
 		return telegram.sendMessage(ctx,
 			`*Как правильно задавать вопрос.*
 
@@ -70,7 +70,9 @@ telegram.bot.command('question', async(ctx) => {
 });
 
 telegram.bot.command('deepseek_test_spam', async(ctx) => {
-	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+
+	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
 	if(message && message.message_id && message?.text){
 		const answer = await deepseek.testMessage(ctx);
 
@@ -81,15 +83,25 @@ telegram.bot.command('deepseek_test_spam', async(ctx) => {
 	}
 });
 
-telegram.bot.command('deepseek', async(ctx) => { deepseek.deepSeekTalks(ctx).then(); });
+telegram.bot.command('deepseek', async(ctx) => {
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	return deepseek.deepSeekTalks(ctx);
+});
 
-telegram.bot.command('deepseek_analyse', async(ctx) => { deepseek.deepSeekTalks(ctx, true).then(); });
+telegram.bot.command('deepseek_analyse', async(ctx) => {
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	return deepseek.deepSeekTalks(ctx, true);
+});
 
-telegram.bot.command('deepseek_summary', async(ctx) => { deepseek.deepSeekSummary(ctx, true).then(); });
+telegram.bot.command('deepseek_summary', async(ctx) => {
+	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	return deepseek.deepSeekSummary(ctx, true);
+});
 
 telegram.bot.command('get_ai_settints', async(ctx) => {
-	if(await telegram.requireChatAdmin(ctx)){
+	telegram.deleteMessage(ctx).then(); // Удаляем команду
 
+	if(await telegram.requireChatAdmin(ctx)){
 		telegram.sendAutoRemoveMsg(ctx, 'Текущие настройки АИ для чата:').then();
 		telegram.sendAutoRemoveMsg(ctx, 'Режим чата:').then();
 		let settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
@@ -107,10 +119,10 @@ telegram.bot.command('get_ai_settints', async(ctx) => {
 });
 
 telegram.bot.action('apply_rules', async(ctx) => {
-	const message = ctx?.update?.callback_query?.message;
+	const message = telegram.getCtxMessage(ctx);
 	if(message){
-		const chat = message.chat;
-		const user = ctx?.update?.callback_query.from;
+		const chat = telegram.getChatFromCtx(ctx);
+		const user = telegram.getUserFromCtx(ctx);
 
 		if(chat?.id && user?.id){
 			// Сохраняем сообщение
@@ -135,7 +147,7 @@ telegram.bot.on('new_chat_members', async(ctx) => {
 	const arr = [];
 
 	for(let i = 0; i < ctx?.message?.new_chat_members; i++){
-		const user = ctx?.update?.message?.new_chat_members[i];
+		const user = telegram.getCtxMessage(ctx)?.new_chat_members[i];
 		arr.push(telegram.sendNewUserQuestion(ctx, user));
 	}
 
@@ -185,7 +197,7 @@ telegram.bot.on([
 	'my_chat_member', 'chat_join_request', 'contact', 'dice', 'location', 'users_shared', 'chat_shared'
 ], async(ctx) => {
 	logger.log('chat message').then();
-	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
+	/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
 	if(message && message.message_id){
 		const chat = message.chat;
 		const user = message.from;
