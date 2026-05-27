@@ -248,7 +248,7 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
 		?.filter(mess => !!mess?.content);
 
 export const getChatsSettings = async(chat_id) => db.query(`
-    SELECT ID, CLEAR_INTERVAL
+    SELECT ID, CLEAR_INTERVAL::TEXT AS CLEAR_INTERVAL 
     FROM CHATS
     ORDER BY ID;`);
 
