@@ -1,8 +1,11 @@
-import OpenAI           from "openai";
-import logger           from "./logger.mjs";
-import * as telegram    from "./telegram.mjs";
-import * as telegram_db from "./telegram_db.mjs";
-import * as db          from "./db.mjs";
+import OpenAI                                                                   from "openai";
+import logger                                                                   from "./logger.mjs";
+import * as telegram                                                            from "./telegram.mjs";
+import * as telegram_db                                                         from "./telegram_db.mjs";
+import * as db                                                                  from "./db.mjs";
+import {getChatFromCtx, getCtxMessage}                                          from "./telegram.mjs";
+import {getChatAISettings, insertAIRequest, setChatAISettings, updateAIRequest} from "./telegram_db.mjs";
+import {rows}                                                                   from "pg/lib/defaults.js";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -25,10 +28,11 @@ const AI_MODEL_CHAT      = 2;
 const AI_CHAT_MODEL     = 'deepseek-v4-flash';
 const AI_REASONER_MODEL = 'deepseek-v4-pro';
 
-const AI_ID = 1;
+export const AI_ID = 1;
 
 /**
  * Отправка сообщения в DeepSeek
+ * @param {CTX} ctx
  * @param {Number} ai_id
  * @param {Object} messages
  * @param {Number} chat_id
@@ -37,7 +41,7 @@ const AI_ID = 1;
  * @param {String} [systemPrompt]
  * @returns {Promise<Object>}
  */
-export async function sendMessages2AI(ai_id, messages, chat_id, analyse, queryType, systemPrompt){
+export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, queryType, systemPrompt){
 	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return null;
@@ -45,14 +49,7 @@ export async function sendMessages2AI(ai_id, messages, chat_id, analyse, queryTy
 
 	if(messages?.length > 0){
 		// Сохраняем запрос в БД
-		const _id = (await db.query(`WITH INS (ID) AS (
-                                     INSERT
-                                     INTO AI_REQUEST (REQUEST, AI_ID, AI_KIND, AI_MODEL)
-                                     VALUES ($1::JSONB, $2:: INT, $3:: SMALLINT, $4:: SMALLINT) RETURNING ID)
-                        SELECT ID
-                        FROM INS;`,
-				[JSON.stringify(messages, null, ''), ai_id, queryType, AI_MODEL_CHAT])
-		)?.rows?.[0]?.id;
+		const _id = await insertAIRequest(ai_id, queryType, AI_MODEL_CHAT, messages);
 
 		logger.log(`Отправка сообщений:"`).then();
 		logger.log(`ID: ${_id}`).then();
@@ -60,11 +57,8 @@ export async function sendMessages2AI(ai_id, messages, chat_id, analyse, queryTy
 		// Получаем блок настроек для чата/AI (Если сознательно не передали свой)
 		let temperature = 1;
 		if(!systemPrompt){
-			(await db.query(`SELECT TYPE, VALUE
-                             FROM AI2CHAT_SETTINGS
-                             WHERE AI_ID = $1::INT AND CHAT_ID = $2::BIGINT
-                               AND REASONER_MODE=$3::BOOL`,
-				[ai_id, chat_id, !!analyse ? 't' : 'f']))?.rows?.map(row => {
+			(await getChatAISettings(ctx, ai_id, !!analyse))
+				?.rows?.map(row => {
 				switch(row.type){
 					case 'SYSTEM_PROMPT':
 						systemPrompt = row.value;
@@ -102,11 +96,7 @@ export async function sendMessages2AI(ai_id, messages, chat_id, analyse, queryTy
 			const _answer    = completion.choices[0].message;
 
 			// Сохраняем ответ от AI
-			await db.query(`UPDATE AI_REQUEST
-                            SET ANSWER = $1::JSONB,
-                             ANSWER_TIMESTAMP = NOW()
-                            WHERE ID = $2:: INT;`, [JSON.stringify(completion, null, ''), _id]
-			);
+			updateAIRequest(_id, completion).then();
 
 			logger.trace(`Ответ:`).then();
 			logger.dir(_answer).then();
@@ -117,11 +107,7 @@ export async function sendMessages2AI(ai_id, messages, chat_id, analyse, queryTy
 			logger.err(err).then();
 			if(_id){
 				// Сохраняем ошибку от AI
-				await db.query(`UPDATE AI_REQUEST
-                                SET ERROR = $1::JSONB,
-                                 ERROR_TIMESTAMP = NOW()
-                                WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
-				);
+				updateAIRequest(_id, null, err).then();
 			}
 
 			return null;
@@ -139,7 +125,8 @@ async function showWaitMessage(ctx){
 	if(ctx){
 		const res = {};
 
-		const message = ctx?.update?.message || ctx?.update?.edited_message;
+		const message = getCtxMessage(ctx);
+		const chat    = getChatFromCtx(ctx);
 
 		let _symb           = `🔃️`;
 		res.ctx             = ctx;
@@ -154,7 +141,7 @@ async function showWaitMessage(ctx){
 					_symb = '🔃️';
 					break;
 			}
-			return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
+			return telegram.editMessage(ctx, chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
 		}, 4000);
 
 		return res;
@@ -188,7 +175,7 @@ async function hideWaitMessage(waitMessageStruct){
  */
 async function sendAnswerIA(ctx, answer){
 	// Обработка ответа
-	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	const message = getCtxMessage(ctx);
 	if(message?.message_id){
 		const botInfo = ctx?.botInfo;
 		const chat    = message.chat;
@@ -232,7 +219,7 @@ async function sendAnswerIA(ctx, answer){
  */
 async function sendHelpMessageIA(ctx){
 	// Обработка ответа
-	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	const message = getCtxMessage(ctx);
 	if(message?.message_id){
 		const botInfo = ctx?.botInfo;
 		const chat    = message.chat;
@@ -273,7 +260,9 @@ export async function isSpamMessage(ctx){
 
 		const _messages = [{role: 'user', content: message}];
 
-		const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_SPAM, 'Check the message and answer only YES or NO if the message looks like SPAM');
+		const spamPrompt = (await getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
+		                   'Check the message and answer only YES or NO if the message looks like SPAM';
+		const _answer    = await sendMessages2AI(ctx, AI_ID, _messages, chat?.id, false, IS_SPAM, spamPrompt);
 
 		return _answer?.content?.toUpperCase().includes('YES');
 	}
@@ -292,7 +281,7 @@ export async function testMessage(ctx){
 		return null;
 	}
 
-	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
+	/** @type {Message|Edited_Message} */ const message = getCtxMessage(ctx);
 	if(message?.message_id && message?.text){
 		const chat = message.chat;
 
@@ -300,7 +289,9 @@ export async function testMessage(ctx){
 		if(arr?.[1]){
 			const _messages = [{role: 'user', content: arr[1]}];
 
-			const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_TEST_MESSAGE, 'Check the message and answer only YES or NO if the message looks like SPAM');
+			const spamPrompt = (await getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
+			                   'Check the message and answer only YES or NO if the message looks like SPAM';
+			const _answer    = await sendMessages2AI(ctx, AI_ID, _messages, chat?.id, false, IS_TEST_MESSAGE, spamPrompt);
 
 			return _answer?.content?.toUpperCase().includes('YES') ? 'YES' : 'NO';
 		}
@@ -321,7 +312,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 		return null;
 	}
 
-	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	const message = getCtxMessage(ctx);
 	if(message && message?.message_id && message?.text){
 		// Очистка запроса от текста команды
 		const botInfo = ctx?.botInfo;
@@ -343,7 +334,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 					const _waitMessage = await showWaitMessage(ctx);
 
 					// Запрашиваем ответ у DeepSeek
-					const answer = await sendMessages2AI(AI_ID, messages, chat.id, !!analyse, IS_MESSAGE);
+					const answer = await sendMessages2AI(ctx, AI_ID, messages, chat.id, !!analyse, IS_MESSAGE);
 
 					// Останавливаем обновление сообщения
 					await hideWaitMessage(_waitMessage);
@@ -374,7 +365,7 @@ export const deepSeekSummary = async(ctx) => {
 		return null;
 	}
 
-	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	const message = getCtxMessage(ctx);
 	if(message && message?.message_id && message?.text){
 		// Очистка запроса от текста команды
 		const botInfo = ctx?.botInfo;
@@ -416,15 +407,14 @@ export const deepSeekSummary = async(ctx) => {
 				// Получаем историю сообщений
 				const messages = await telegram_db.getMessagesFromChatByInterval(message.chat?.id, ctx?.botInfo?.id, interval);
 				if(messages?.length > 0){
-
-					const summaryPrompt = (await db.query(`SELECT VALUE FROM AI2CHAT_SETTINGS WHERE AI_ID=$1::INT AND CHAT_ID=$2::BIGINT AND TYPE=$3::TEXT LIMIT 1`,
-						[AI_ID, chat?.id, 'SUMMARY_PROMPT']))?.rows?.[0]?.value;
+					const summaryPrompt = (await getChatAISettings(ctx, AI_ID, false, 'SUMMARY_PROMPT'))?.rows?.[0]?.value;
 					if(summaryPrompt){
 						// Уведомляем, что получили запрос и начали готовить ответ
 						const _waitMessage = await showWaitMessage(ctx);
 
 						// Запрашиваем ответ у DeepSeek
 						const answer = await sendMessages2AI(
+							ctx,
 							AI_ID,
 							[{
 								role:    'user',

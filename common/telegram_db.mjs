@@ -1,6 +1,7 @@
-import CircularJSON from 'circular-json';
-import * as db      from './db.mjs';
-import logger       from "./logger.mjs";
+import CircularJSON     from 'circular-json';
+import * as db          from './db.mjs';
+import logger           from "./logger.mjs";
+import {getChatFromCtx} from "./telegram.mjs";
 
 //-----------------------------------
 
@@ -229,8 +230,8 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
                   AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
                   AND NOT (M.MESSAGE ->> 'text' ~* '^/') -- Убираем вызовы команд бота
                 ORDER BY TIMESTAMP;`,
-	[chat_id]))
-	?.rows?.map(row => {
+		[chat_id]))
+		?.rows?.map(row => {
 		if(row){
 			// Отрезаем командный текст, если он есть
 			const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text?.replace(/\s+/igm, ' '));
@@ -244,10 +245,10 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
 			return null;
 		}
 	})
-	.filter(row => !!row)
-	?.filter(mess => !!mess?.content);
+		.filter(row => !!row)
+		?.filter(mess => !!mess?.content);
 
-export const getChats = async(chat_id) => db.query(`
+export const getChatsSettings = async(chat_id) => db.query(`
     SELECT ID, CLEAR_INTERVAL
     FROM CHATS
     ORDER BY ID;`);
@@ -257,3 +258,53 @@ export const removeMessages = async(chat_id, interval) => chat_id && interval &&
         DELETE FROM MESSAGES WHERE CHAT_ID = $1::BIGINT AND TIMESTAMP < NOW() - $2::INTERVAL RETURNING MESSAGES.MESSAGE_ID)
     SELECT COUNT(*)
     FROM DEL;`);
+
+export const getChatAISettings = async(ctx, ai_id, analise, type) =>
+	type ? db.query(`SELECT REASONER_MODE, TYPE, VALUE
+                     FROM AI2CHAT_SETTINGS
+                     WHERE AI_ID = $1::INT
+                       AND CHAT_ID = $2::BIGINT
+                       AND REASONER_MODE = $3::BOOL
+                       AND TYPE = $4::TEXT
+                     LIMIT 1;`, [ai_id, getChatFromCtx(ctx)?.id, !!analise, type])
+		: db.query(`SELECT VALUE
+                    FROM AI2CHAT_SETTINGS
+                    WHERE AI_ID = $1::INT
+                      AND CHAT_ID = $2::BIGINT
+                      AND REASONER_MODE = $3::BOOL
+                    ORDER BY TYPE;`, [ai_id, getChatFromCtx(ctx)?.id, !!analise]);
+
+export const setChatAISettings = async(ctx, ai_id, analise, type, value) => {
+	const chat = getChatFromCtx(ctx);
+	if(ai_id && !isNaN(chat?.id) && type){
+		return db.query(`
+                    WITH INS AS (
+                        INSERT INTO AI2CHAT_SETTINGS (CHAT_ID, AI_ID, TYPE, REASONER_MODE, VALUE)
+                            VALUES ($1::BIGINT, $2::INT, $3::TEXT, $4::BOOL, $5::TEXT)
+                            ON CONFLICT (CHAT_ID, AI_ID, TYPE, REASONER_MODE) DO UPDATE SET VALUE = EXCLUDED.VALUE
+                            RETURNING 1)
+                    SELECT COUNT(*)
+                    FROM INS;`,
+			[chat?.id, ai_id, type, !!analise, value]);
+	}
+};
+
+export const insertAIRequest = async(ai_id, ai_kind, ai_model, messages) =>
+	(await db.query(`WITH INS (ID) AS (
+                INSERT
+                    INTO AI_REQUEST (REQUEST, AI_ID, AI_KIND, AI_MODEL)
+                        VALUES ($1::JSONB, $2:: INT, $3:: SMALLINT, $4:: SMALLINT) RETURNING ID)
+                     SELECT ID
+                     FROM INS;`,
+		[JSON.stringify(messages, null, ''), ai_id, ai_kind, ai_model]))?.rows?.[0]?.id;
+
+export const updateAIRequest = async(id, response, error) =>
+	response ? (await db.query(`UPDATE AI_REQUEST
+                                SET ANSWER = $1::JSONB,
+                                    ANSWER_TIMESTAMP = NOW()
+                                WHERE ID = $2:: INT;`, [JSON.stringify(response, null, ''), id]))
+		: error ? (await db.query(`UPDATE AI_REQUEST
+                                   SET ERROR           = $1::JSONB,
+                                       ERROR_TIMESTAMP = NOW()
+                                   WHERE ID = $2:: INT;`, [JSON.stringify(error, null, ''), id]))
+			: null;

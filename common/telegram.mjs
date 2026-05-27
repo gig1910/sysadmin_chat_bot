@@ -2,11 +2,16 @@ import {Markup, Telegraf}           from 'telegraf';
 import * as logger                  from './logger.mjs';
 import {parseMessageAndSaveByParts} from './parser.mjs';
 import * as telegram_db             from "./telegram_db.mjs";
+import telegram                     from "telegraf/src/telegram";
 //----------------------------------
 
 const TELEGRAM_MAX_MESSAGE_LENGTH            = parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 10000;
 const TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE = parseInt(process.env.TELEGRAM_TIMEOUT_TO_AUTOREMOVE_MESSAGE, 10) || 10000;
 const TELEGRAM_TIMEOUT_TO_DELETE_QUESTION    = parseInt(process.env.TELEGRAM_TIMEOUT_TO_DELETE_QUESTION, 10) || 60000;
+
+const ADMIN_STATUSES = new Set(["creator", "administrator"]);
+
+//----------------------------------
 
 if(!process.env.TOKEN){ throw new Error('Not defined ENV BOT TOKEN'); }
 
@@ -18,6 +23,27 @@ const HelloText = `Привет, %fName% %lName% (@%username%).
 Перед тем как написать вопрос прочти, пожалуйста, правила группы в закреплённом сообщении https://t.me/sysadminru/104027`;
 
 export const makeName = (user) => `${user?.first_name ? user?.first_name : ''}${user?.last_name ? (user?.first_name ? ' ' : '') + user?.last_name : ''}`;
+
+/**
+ * Получение сообщения из CTX
+ * @param {CTX} ctx
+ * @returns {Message|null}
+ */
+export const getCtxMessage = (ctx) => ctx?.update?.message || ctx?.update?.edited_message || null;
+
+/**
+ * Получение данных чата из CTX
+ * @param {CTX} ctx
+ * @returns {Chat|null}
+ */
+export const getChatFromCtx = (ctx) => getCtxMessage(ctx)?.chat;
+
+/**
+ * Получение данных чата из CTX
+ * @param {CTX} ctx
+ * @returns {User|null}
+ */
+export const getUserFromCtx = (ctx) => getCtxMessage(ctx)?.from;
 
 /**
  * Удаление сообщения
@@ -165,9 +191,9 @@ export const sentQuestion = async(ctx, question, buttons) => {
 };
 
 export const sendNewUserQuestion = async(ctx, user) => {
-	const message = ctx?.update?.message;
+	const message = getCtxMessage(ctx);
 	if(message?.message_id){
-		const chat = message?.chat;
+		const chat = getChatFromCtx(ctx);
 		if(chat?.id){
 			// const chat = await ctx.telegram.getChat(chatID);
 			await Promise.all([
@@ -228,3 +254,82 @@ export const removeUserFromChat = async(ctx, chat, user) => {
 		return sendAutoRemoveMsg(ctx, `Участник ${makeName(user)} удалён как спамер.`);
 	}
 };
+
+/**
+ * Проверка? что вызов был из группы или супер-группы
+ * @param {CTX} ctx
+ * @returns {Boolean}
+ */
+export const isGroupChat = (ctx) => {
+	const chat = getChatFromCtx(ctx);
+	return ['group', 'supergroup'].includes(chat?.type);
+}
+
+/**
+ * Проверяет, что сообщение отправлено анонимным админом от имени группы.
+ * В Telegram такие сообщения приходят с sender_chat.id === chat.id.
+ *
+ * @param {CTX} ctx
+ * @returns {Boolean}
+ */
+export const isAnonymousChatAdmin = (ctx) => {
+	const message = getCtxMessage(ctx);
+
+	return Boolean(
+		message?.sender_chat?.id && message?.chat?.id && message.sender_chat.id === message.chat.id
+	);
+}
+
+/**
+ * Проверяет, является ли пользователь админом текущего чата
+ * @param {CTX} ctx
+ * @returns {Promise<Boolean>}
+ */
+export const isCurrentUserChatAdmin = async(ctx) => {
+	if(!isGroupChat(ctx)){
+		return false;
+	}
+
+	if(isAnonymousChatAdmin(ctx)){
+		return true;
+	}
+
+	if(!ctx.from?.id || ctx.from?.is_bot){
+		return false;
+	}
+
+	const member = await ctx.getChatMember(ctx.from.id);
+
+	return ADMIN_STATUSES.has(member.status);
+}
+
+/**
+ * Guard для команд, доступных только админам группы
+ * @param {CTX} ctx
+ * @returns {Promise<Boolean>}
+ */
+export const requireChatAdmin = async(ctx) => {
+	if(!isGroupChat(ctx)){
+		await sendAutoRemoveMsg(ctx, 'Команда доступна только в группе или супергруппе.');
+		return false;
+	}
+
+	let isAdmin = false;
+
+	try{
+		isAdmin = await isCurrentUserChatAdmin(ctx);
+
+	}catch(error){
+		logger.error("Failed to check chat admin:", error).then();
+		await sendAutoRemoveMsg(ctx, 'Не удалось проверить права администратора. Проверь, что бот добавлен в чат и имеет права администратора.');
+
+		return false;
+	}
+
+	if(!isAdmin){
+		await sendAutoRemoveMsg(ctx, 'Команда доступна только администраторам чата.');
+		return false;
+	}
+
+	return true;
+}
