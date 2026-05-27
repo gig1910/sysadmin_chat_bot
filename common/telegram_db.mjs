@@ -259,14 +259,14 @@ export const removeMessages = async(chat_id, interval) => chat_id && interval &&
     FROM DEL;`);
 
 export const getChatAISettings = async(ctx, ai_id, analise, type) =>
-	type ? db.query(`SELECT REASONER_MODE, TYPE, VALUE
+	type ? db.query(`SELECT VALUE
                      FROM AI2CHAT_SETTINGS
                      WHERE AI_ID = $1::INT
                        AND CHAT_ID = $2::BIGINT
                        AND REASONER_MODE = $3::BOOL
                        AND TYPE = $4::TEXT
                      LIMIT 1;`, [ai_id, telegram.getChatFromCtx(ctx)?.id, !!analise, type])
-		: db.query(`SELECT VALUE
+		: db.query(`SELECT REASONER_MODE, TYPE, VALUE
                     FROM AI2CHAT_SETTINGS
                     WHERE AI_ID = $1::INT
                       AND CHAT_ID = $2::BIGINT
