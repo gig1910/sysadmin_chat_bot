@@ -1,8 +1,8 @@
-import OpenAI                          from "openai";
-import logger                          from "./logger.mjs";
-import * as telegram                   from "./telegram.mjs";
-import * as telegram_db                from "./telegram_db.mjs";
-import {query}                         from "./db.mjs";
+import OpenAI           from "openai";
+import logger           from "./logger.mjs";
+import * as telegram    from "./telegram.mjs";
+import * as telegram_db from "./telegram_db.mjs";
+import * as db          from "./db.mjs";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -15,167 +15,56 @@ if(DEEPSEEK_API_KEY){
 	});
 }
 
-const IS_SPAM           = 1;
-const IS_MESSAGE        = 2;
-const IS_TEST_MESSAGE   = 3;
-const AI_MODEL_REASONER = 1;
-const AI_MODEL_CHAT     = 2;
+const IS_SPAM            = 1;
+const IS_MESSAGE         = 2;
+const IS_TEST_MESSAGE    = 3;
+const IS_SUMMARY_MESSAGE = 4;
+const AI_MODEL_REASONER  = 1;
+const AI_MODEL_CHAT      = 2;
 
 const AI_CHAT_MODEL     = 'deepseek-v4-flash';
 const AI_REASONER_MODEL = 'deepseek-v4-pro';
 
-/**
- * Тест сообщения на SPAM
- * @param {String} message
- * @returns {Promise<Boolean>}
- */
-export async function isSpamMessage(message){
-	if(!openai){
-		logger.warn('DeepSeek API key is not set').then();
-		return false;
-	}
-
-	// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
-	logger.log(`Тест сообщения на спам "${message}"`).then();
-	const _messages = [{
-		role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
-	}, {
-		role: 'user', content: message
-	}];
-	const _id       = (await query(`WITH INS (ID) AS (
-                                    INSERT
-                                    INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL)
-                                    VALUES ($1::JSONB, $2:: SMALLINT, $3:: SMALLINT) RETURNING ID)
-            SELECT ID
-            FROM INS;`,
-		[JSON.stringify(_messages, null, ''), IS_SPAM, AI_MODEL_REASONER]
-	))?.rows?.[0]?.id;
-	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
-
-	try{
-		const completion = await openai.chat.completions.create({
-			messages: _messages,
-			model:    AI_CHAT_MODEL, //AI_REASONER_MODEL,
-		});
-
-		const _answer = completion.choices[0].message;
-		await query(`UPDATE AI_REQUEST
-                     SET ANSWER = $1::JSONB,
-                         ANSWER_TIMESTAMP = NOW()
-                     WHERE ID = $2:: INT;`,
-			[JSON.stringify(completion, null, ''), _id]
-		);
-		logger.log(_answer).then();
-
-		return _answer?.content?.toUpperCase().includes('YES');
-
-	}catch(err){
-		logger.err(err).then();
-		if(_id){
-			await query(`UPDATE AI_REQUEST
-                         SET ERROR = $1::JSONB,
-                                 ERROR_TIMESTAMP = NOW()
-                         WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
-			);
-		}
-
-		return false;
-	}
-}
-
-/**
- *
- * @param {String} message
- * @returns {Promise<?String>}
- */
-export async function testMessage(message){
-	if(!openai){
-		logger.warn('DeepSeek API key is not set').then();
-		return null;
-	}
-
-	// const prompt = `Check the message in quotes and answer only YES or NO if the message looks like SPAM "${message}"`;
-
-	const _messages = [{
-		role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
-	}, {
-		role: 'user', content: message
-	}];
-	const _id       = (await query(`WITH INS (ID) AS (
-                                    INSERT
-                                    INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL)
-                                    VALUES ($1::JSONB, $2:: SMALLINT, $3:: SMALLINT) RETURNING ID)
-                    SELECT ID
-                    FROM INS;`,
-			[JSON.stringify(_messages, null, ''), IS_TEST_MESSAGE, AI_MODEL_REASONER])
-	)?.rows?.[0]?.id;
-	logger.log(`Тест сообщения на спам (${_id}) "${message}"`).then();
-
-	try{
-		const completion = await openai.chat.completions.create({
-			messages: _messages,
-			model:    AI_CHAT_MODEL, //AI_REASONER_MODEL,
-		});
-
-		const _answer = completion.choices[0].message;
-		await query(`UPDATE AI_REQUEST
-                     SET ANSWER = $1::JSONB,
-                         ANSWER_TIMESTAMP = NOW()
-                     WHERE ID = $2:: INT;`,
-			[JSON.stringify(completion, null, ''), _id]
-		);
-		logger.log(_answer).then();
-
-		return _answer?.content;
-
-	}catch(err){
-		logger.err(err).then();
-		if(_id){
-			await query(`UPDATE AI_REQUEST
-                         SET ERROR = $1::JSONB,
-                                 ERROR_TIMESTAMP = NOW()
-                         WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
-			);
-		}
-
-		return '';
-	}
-}
+const AI_ID = 1;
 
 /**
  * Отправка сообщения в DeepSeek
+ * @param {Number} ai_id
  * @param {Object} messages
- * @param {Boolean} [analyse]
- * @param {Number} [chat_id]
+ * @param {Number} chat_id
+ * @param {Boolean} [analyse = false]
+ * @param {Number}  [queryType= {{IS_MESSAGE}}]
  * @param {String} [systemPrompt]
  * @returns {Promise<Object>}
  */
-export async function sendMessages(messages, analyse, chat_id, systemPrompt){
+export async function sendMessages2AI(ai_id, messages, chat_id, analyse, queryType, systemPrompt){
 	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return null;
 	}
 
 	if(messages?.length > 0){
-		const _id = (await query(`WITH INS (ID) AS (
-                                  INSERT
-                                  INTO AI_REQUEST (REQUEST, AI_KIND, AI_MODEL)
-                                  VALUES ($1::JSONB, $2:: SMALLINT, $3:: SMALLINT) RETURNING ID)
+		// Сохраняем запрос в БД
+		const _id = (await db.query(`WITH INS (ID) AS (
+                                     INSERT
+                                     INTO AI_REQUEST (REQUEST, AI_ID, AI_KIND, AI_MODEL)
+                                     VALUES ($1::JSONB, $2:: INT, $3:: SMALLINT, $4:: SMALLINT) RETURNING ID)
                         SELECT ID
                         FROM INS;`,
-				[JSON.stringify(messages, null, ''), IS_MESSAGE, AI_MODEL_CHAT])
+				[JSON.stringify(messages, null, ''), ai_id, queryType, AI_MODEL_CHAT])
 		)?.rows?.[0]?.id;
+
 		logger.log(`Отправка сообщений:"`).then();
 		logger.log(`ID: ${_id}`).then();
 
-		// Получаем блок настроек для чата/AI
+		// Получаем блок настроек для чата/AI (Если сознательно не передали свой)
 		let temperature = 1;
 		if(!systemPrompt){
-			(await query(`SELECT TYPE, VALUE
-                          FROM AI2CHAT_SETTINGS
-                          WHERE CHAT_ID = $1::BIGINT AND AI_ID=$2:: INT
-                            AND REASONER_MODE=$3::BOOL`,
-				[chat_id, 1, !!analyse ? 't' : 'f']))?.rows?.map(row => {
+			(await db.query(`SELECT TYPE, VALUE
+                             FROM AI2CHAT_SETTINGS
+                             WHERE AI_ID = $1::INT AND CHAT_ID = $2::BIGINT
+                               AND REASONER_MODE=$3::BOOL`,
+				[ai_id, chat_id, !!analyse ? 't' : 'f']))?.rows?.map(row => {
 				switch(row.type){
 					case 'SYSTEM_PROMPT':
 						systemPrompt = row.value;
@@ -189,40 +78,34 @@ export async function sendMessages(messages, analyse, chat_id, systemPrompt){
 		}
 
 		if(systemPrompt){
+			// Есть системный промпт. Добавляем его в запрос
 			messages = [{role: 'system', content: systemPrompt}].concat(messages);
 		}
 
+		// Отправка запроса AI
 		try{
-			let aiParams = {};
+			const aiParams = {
+				messages,
+				model:       AI_CHAT_MODEL,
+				temperature: temperature || 0.85,
+			};
+
 			if(!!analyse){
-
-				/* {
-					role: 'system', content: 'Check the message and answer only YES or NO if the message looks like SPAM'
-				} */
-				aiParams = {
-					messages,
-					model:            AI_CHAT_MODEL,
-					thinking:         {"type": "enabled"},
-					reasoning_effort: "high",
-					temperature:      temperature || 1,
-				};
-
-			}else{
-				aiParams = {
-					messages,
-					model:       AI_CHAT_MODEL,
-					temperature: temperature || 0.85,
-				};
+				aiParams.thinking         = {"type": "enabled"};
+				aiParams.reasoning_effort = 'high';
+				aiParams.temperature      = temperature || 1;
 			}
 
 			logger.trace(aiParams).then();
 
 			const completion = await openai.chat.completions.create(aiParams);
 			const _answer    = completion.choices[0].message;
-			await query(`UPDATE AI_REQUEST
-                         SET ANSWER = $1::JSONB,
+
+			// Сохраняем ответ от AI
+			await db.query(`UPDATE AI_REQUEST
+                            SET ANSWER = $1::JSONB,
                              ANSWER_TIMESTAMP = NOW()
-                         WHERE ID = $2:: INT;`, [JSON.stringify(completion, null, ''), _id]
+                            WHERE ID = $2:: INT;`, [JSON.stringify(completion, null, ''), _id]
 			);
 
 			logger.trace(`Ответ:`).then();
@@ -233,10 +116,11 @@ export async function sendMessages(messages, analyse, chat_id, systemPrompt){
 		}catch(err){
 			logger.err(err).then();
 			if(_id){
-				await query(`UPDATE AI_REQUEST
-                             SET ERROR = $1::JSONB,
+				// Сохраняем ошибку от AI
+				await db.query(`UPDATE AI_REQUEST
+                                SET ERROR = $1::JSONB,
                                  ERROR_TIMESTAMP = NOW()
-                             WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
+                                WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
 				);
 			}
 
@@ -245,12 +129,181 @@ export async function sendMessages(messages, analyse, chat_id, systemPrompt){
 	}
 }
 
+/**
+ * Отображение уведомления? что ответ у АИ запрошен
+ * @param {CTX} ctx
+ * @returns {Promise<?{ctx: CTX, mess: [Message.TextMessage], updater_handler: Number}>}
+ * @async
+ */
+async function showWaitMessage(ctx){
+	if(ctx){
+		const res = {};
+
+		const message = ctx?.update?.message || ctx?.update?.edited_message;
+
+		let _symb           = `🔃️`;
+		res.ctx             = ctx;
+		res.mess            = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
+		res.updater_handler = setInterval(async() => {
+			const mess_id = (await res.mess[0])?.message_id;
+			switch(_symb){
+				case '🔃️':
+					_symb = '🔄';
+					break;
+				default:
+					_symb = '🔃️';
+					break;
+			}
+			return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
+		}, 4000);
+
+		return res;
+	}
+}
+
+/**
+ * Удаление сообщения-уведомления
+ * @param {{ctx: CTX, mess: [Message.TextMessage], updater_handler: Number}} waitMessageStruct
+ * @returns {Promise<void>}
+ * @async
+ */
+async function hideWaitMessage(waitMessageStruct){
+	if(waitMessageStruct){
+		// Останавливаем обновление сообщения
+		clearInterval(waitMessageStruct.updater_handler);
+
+		// Удаляем уведомление о подготовке ответа
+		for(let i = 0; i < waitMessageStruct.mess?.length; i++){
+			const mess_id = (await waitMessageStruct.mess[i])?.message_id;
+			telegram.deleteMessage(waitMessageStruct.ctx, mess_id).then();
+		}
+	}
+}
+
+/**
+ * Отправка ответа от AI
+ * @param {CTX} ctx
+ * @param {Object} answer
+ * @returns {Promise<Message.TextMessage[]>}
+ */
+async function sendAnswerIA(ctx, answer){
+	// Обработка ответа
+	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	if(message?.message_id){
+		let mess;
+		if(answer){
+			// Отправляем ответ DeepSeek как ответ на сообщение
+			mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
+			Promise.all(mess).then(mess => {
+				mess?.forEach(m => {
+					if(m?.message_id){
+						ctx.update.message = m;
+						//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
+						telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
+					}
+				});
+			});
+
+
+		}else{ // Нет ответа, т.к. ошибка
+			mess = await telegram.replyMessage(ctx, message?.message_id, 'Ошибка при запросе у DeepSeek.\nПовторите запрос позднее...', true);
+			Promise.all(mess).then(mess => {
+				mess?.forEach(m => {
+					if(m?.message_id){
+						ctx.update.message = m;
+						//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
+						telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
+					}
+				});
+			});
+		}
+
+		return mess;
+	}
+}
+
+/**
+ * Отправка ответа-справки от AI
+ * @param {CTX} ctx
+ * @returns {Promise<Message.TextMessage[]>}
+ */
+async function sendHelpMessageIA(ctx){
+	// Обработка ответа
+	const message = ctx?.update?.message || ctx?.update?.edited_message;
+	if(message?.message_id){
+		let mess = await telegram.replyMessage(ctx, message?.message_id, 'Привет, я бот-помошник.\n\nЯ могу попробовать ответить на твой вопрос, но для этого Вы должны его задать используя или ответ на это сообщение, или используя формат `/deepseek ВОПРОС`\n\nВы так же можете давать ответ на сообщение в цепочке обсуждения которого есть вопрос ко мне, я тогда проанализирую всю цепочку вопросов-ответов и выдам более релевантный результат.', true);
+		Promise.all(mess).then(mess => {
+			mess?.forEach(m => {
+				if(m?.message_id){
+					ctx.update.message = m;
+					//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
+					telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
+				}
+			});
+		});
+
+		return mess;
+	}
+}
+
+// ------------------------------------------------
+
+/**
+ * Тест сообщения на SPAM
+ * @param {CTX} ctx
+ * @returns {Promise<Boolean>}
+ */
+export async function isSpamMessage(ctx){
+	if(!openai){
+		logger.warn('DeepSeek API key is not set').then();
+		return false;
+	}
+
+	const message = ctx?.message?.text;
+	if(message){
+		const chat = message.chat;
+		const user = message.from;
+
+		logger.log(`Тест сообщения на спам "${message}"`).then();
+
+		const _messages = [{role: 'user', content: message}];
+
+		const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_SPAM, 'Check the message and answer only YES or NO if the message looks like SPAM');
+
+		return _answer?.content?.toUpperCase().includes('YES');
+	}
+
+	return false;
+}
+
+/**
+ * Тест сообщения на спам (отработка команды бота)
+ * @param {CTX} ctx
+ * @returns {Promise<?String>}
+ */
+export async function testMessage(ctx){
+	if(!openai){
+		logger.warn('DeepSeek API key is not set').then();
+		return null;
+	}
+
+	/** @type {Message|Edited_Message} */ const message = ctx?.update?.message || ctx?.update?.edited_message;
+	if(message?.message_id && message?.text){
+		const arr       = (/\/deepseek_test_spam (.*)/gmi).exec(message.text.replace(/\s+/igm, ' '));
+		const _messages = [{role: 'user', content: arr?.length ? arr[1] : message?.text}];
+
+		const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_SPAM, 'Check the message and answer only YES or NO if the message looks like SPAM');
+
+		return _answer?.content?.toUpperCase().includes('YES') ? 'YES' : 'NO';
+	}
+}
+
 // ------------------------------------------------
 
 /**
  * Диалог с DeepSeek
  * @param {CTX} ctx
- * @param {Boolean} [analyse]
+ * @param {Boolean} [analyse] - Флаг режима анализа
  * @returns {Promise<[Message.TextMessage]>}
  */
 export const deepSeekTalks = async(ctx, analyse) => {
@@ -267,7 +320,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 			const chat = message.chat;
 			const user = message.from;
 
-			const text = message.text.replace(/^\/deepseek(?:@\w+)?\s*/igm, '').trim();
+			const text = message.text.replace(/^\/deepseek(?:_analyse)?(?:@\w+)?\s*/igm, '').trim();
 			if(text){
 
 				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
@@ -277,81 +330,25 @@ export const deepSeekTalks = async(ctx, analyse) => {
 				const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, message.chat?.id, message.message_id);
 
 				if(messages?.length > 0){
-					// Запрашиваем ответ у DeepSeek
-
 					// Уведомляем, что получили запрос и начали готовить ответ
-					let _symb             = `🔃️`;
-					const _mess           = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
-					const updater_handler = setInterval(async() => {
-						const mess_id = (await _mess[0])?.message_id;
-						switch(_symb){
-							case '🔃️':
-								_symb = '🔄';
-								break;
-							default:
-								_symb = '🔃️';
-								break;
-						}
-						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
-					}, 4000);
+					const _waitMessage = await showWaitMessage(ctx);
 
-					const answer = await sendMessages(messages, analyse, chat.id);
+					// Запрашиваем ответ у DeepSeek
+					const answer = await sendMessages2AI(messages, analyse, chat.id);
 
 					// Останавливаем обновление сообщения
-					clearInterval(updater_handler);
+					await hideWaitMessage(_waitMessage);
 
-					// Удаляем уведомление о подготовке ответа
-					for(let i = 0; i < _mess?.length; i++){
-						const mess_id = (await _mess[i])?.message_id;
-						telegram.deleteMessage(ctx, mess_id).then();
-					}
-
-					let mess;
-					if(answer){
-						// Отправляем ответ DeepSeek как ответ на сообщение
-						mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
-						Promise.all(mess).then(mess => {
-							mess?.forEach(m => {
-								if(m?.message_id){
-									ctx.update.message = m;
-									//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-									telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-								}
-							});
-						});
-
-
-					}else{ // Нет ответа, т.к. ошибка
-						mess = await telegram.replyMessage(ctx, message?.message_id, 'Ошибка при запросе у DeepSeek.\nПовторите запрос позднее...', true);
-						Promise.all(mess).then(mess => {
-							mess?.forEach(m => {
-								if(m?.message_id){
-									ctx.update.message = m;
-									//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-									telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-								}
-							});
-						});
-					}
-					return mess;
+					// Отправляем ответ
+					return sendAnswerIA(ctx, answer);
 
 				}else{
 					logger.warn('Нет сообщений на отправку в DeepSeek').then();
 				}
 
 			}else{
-				let mess = await telegram.replyMessage(ctx, message?.message_id, 'Привет, я бот-помошник.\n\nЯ могу попробовать ответить на твой вопрос, но для этого Вы должны его задать используя или ответ на это сообщение, или используя формат `/deepseek ВОПРОС`\n\nВы так же можете давать ответ на сообщение в цепочке обсуждения которого есть вопрос ко мне, я тогда проанализирую всю цепочку вопросов-ответов и выдам более релевантный результат.', true);
-				Promise.all(mess).then(mess => {
-					mess?.forEach(m => {
-						if(m?.message_id){
-							ctx.update.message = m;
-							//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-							telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-						}
-					});
-				});
-
-				return mess;
+				// Отправляем ответ-справку
+				return sendHelpMessageIA(ctx);
 			}
 		}
 	}
@@ -360,10 +357,9 @@ export const deepSeekTalks = async(ctx, analyse) => {
 /**
  * Диалог с DeepSeek
  * @param {CTX} ctx
- * @param {Boolean} [analyse]
  * @returns {Promise<[Message.TextMessage]>}
  */
-export const deepSeekSummary = async(ctx, analyse) => {
+export const deepSeekSummary = async(ctx) => {
 	if(!openai){
 		logger.warn('DeepSeek API key is not set').then();
 		return null;
@@ -379,7 +375,7 @@ export const deepSeekSummary = async(ctx, analyse) => {
 
 			const text = message.text.replace(/^\/summary(?:@\w+)?\s*/igm, '').trim();
 			if(text){
-				const re   = /(\d)(h|m|d)/igm;
+				const re   = /(\d)([hmd])/igm;
 				const arr  = re.exec(text);
 				let amount = 2;
 				let period = 'h';
@@ -410,139 +406,39 @@ export const deepSeekSummary = async(ctx, analyse) => {
 
 				// Получаем историю сообщений
 				const messages = await telegram_db.getMessagesFromChatByInterval(message.chat?.id, ctx?.botInfo?.id, interval);
-
 				if(messages?.length > 0){
-					// Запрашиваем ответ у DeepSeek
 
-					// Уведомляем, что получили запрос и начали готовить ответ
-					let _symb             = `🔃️`;
-					const _mess           = await telegram.replyMessage(ctx, message?.message_id, `${_symb} Минутку... Готовлю ответ...`, false);
-					const updater_handler = setInterval(async() => {
-						const mess_id = (await _mess[0])?.message_id;
-						switch(_symb){
-							case '🔃️':
-								_symb = '🔄';
-								break;
-							default:
-								_symb = '🔃️';
-								break;
-						}
-						return telegram.editMessage(ctx, message?.chat?.id, mess_id, `${_symb} Минутку... Готовлю ответ...`, false);
-					}, 4000);
+					const summaryPrompt = (await db.query(`'SELECT VALUE FROM AI2CHAT_SETTINGS WHERE AI_ID=$1::INT AND CHAT_ID=$2::BIGINT AND TYPE='SUMMARY_PROMPT' LIMIT 1`,
+						[AI_ID, chat?.id]))?.rows?.[0]?.value;
+					if(summaryPrompt){
+						// Уведомляем, что получили запрос и начали готовить ответ
+						const _waitMessage = await showWaitMessage(ctx);
 
-					let answer = {};
-					let _id;
+						// Запрашиваем ответ у DeepSeek
+						const answer = await sendMessages2AI(
+							AI_ID,
+							[{
+								role:    'user',
+								content: `Проанализируй этот JSON-массив сообщений:\n\n${JSON.stringify(messages, null, 2)}`
+							}],
+							chat?.id,
+							true,
+							IS_SUMMARY_MESSAGE,
+							summaryPrompt);
 
-					try{
-						let aiParams = {
-							    messages:    [
-								    {
-									    role:    'system',
-									    content: 'Ты — аналитический ассистент. Твоя задача — изучить переданный массив сообщений и составить каткое, емкое текстовое резюме (summary) диалога, структурированное по ролям.\n' +
-									             'Используй Markdown для оформления. Твой ответ должен состоять только из блоков по каждому участнику.\n' +
-									             'Правила анализа и оформления:\n' +
-									             '1. Выдели каждого уникального участника по полю "name" (или "role", если "name" отсутствует).\n' +
-									             '2. Для каждого участника создай заголовок: `### Участник: [Имя/Роль]`\n' +
-									             '3. Ниже заголовка списком перечисли ключевую суть его сообщений: тезисы, запросы, предложения, обязательства или принятые решения.\n' +
-									             '4. Полностью игнорируй флуд, приветствия, вежливость и неважные детали. Только сухие факты.\n' +
-									             '5. Если участник просто поддакивал или не нес смысловой нагрузки, не добавляй его в финальный текст.\n' +
-									             '6. В самом конце добавь блок `### Итог диалога:` с главным результатом беседы в 1–2 предложениях.\n' +
-									             'Пиши строго по делу, без вводных фраз в начале ответа. \n' +
-									             'Участника `@rumanikanec` именуй `Желтый Земляной Червяк` (со склонениями по правилам русского языка)' +
-									             'Ответы от роли `assistant` в summary не выводи и не анализируй (отдельно). В анализе эти ответу участвуют только как непосредственный контекст для ответов участников дискуссии'
-								    },
-								    {
-									    role: 'user',
-									    content:
-									          `Проанализируй этот JSON-массив сообщений:\n\n${JSON.stringify(messages, null, 2)}`
-								    }],
-							    model:       AI_CHAT_MODEL,
-							    temperature: 0.2,
-						    };
+						// Останавливаем обновление сообщения
+						await hideWaitMessage(_waitMessage);
 
-						logger.trace(aiParams).then();
-
-						const completion = await openai.chat.completions.create(aiParams);
-						const _answer    = completion.choices[0].message;
-						_id = await query(`UPDATE AI_REQUEST
-                                     SET ANSWER = $1::JSONB,
-                             ANSWER_TIMESTAMP = NOW()
-                                     WHERE ID = $2:: INT;`, [JSON.stringify(completion, null, ''), _id]
-						);
-
-						logger.trace(`Ответ:`).then();
-						logger.dir(_answer).then();
-
-						answer = _answer;
-
-					}catch(err){
-						logger.err(err).then();
-						if(_id){
-							await query(`UPDATE AI_REQUEST
-                                         SET ERROR = $1::JSONB,
-                                 ERROR_TIMESTAMP = NOW()
-                                         WHERE ID = $2:: INT;`, [JSON.stringify(err, null, ''), _id]
-							);
-						}
-
-						return null;
+						// Отправляем ответ
+						return sendAnswerIA(ctx, answer);
 					}
-
-					// Останавливаем обновление сообщения
-					clearInterval(updater_handler);
-
-					// Удаляем уведомление о подготовке ответа
-					for(let i = 0; i < _mess?.length; i++){
-						const mess_id = (await _mess[i])?.message_id;
-						telegram.deleteMessage(ctx, mess_id).then();
-					}
-
-					let mess;
-					if(answer){
-						// Отправляем ответ DeepSeek как ответ на сообщение
-						mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
-						Promise.all(mess).then(mess => {
-							mess?.forEach(m => {
-								if(m?.message_id){
-									ctx.update.message = m;
-									//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-									telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-								}
-							});
-						});
-
-
-					}else{ // Нет ответа, т.к. ошибка
-						mess = await telegram.replyMessage(ctx, message?.message_id, 'Ошибка при запросе у DeepSeek.\nПовторите запрос позднее...', true);
-						Promise.all(mess).then(mess => {
-							mess?.forEach(m => {
-								if(m?.message_id){
-									ctx.update.message = m;
-									//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-									telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-								}
-							});
-						});
-					}
-					return mess;
 
 				}else{
 					logger.warn('Нет сообщений на отправку в DeepSeek').then();
 				}
 
 			}else{
-				let mess = await telegram.replyMessage(ctx, message?.message_id, 'Привет, я бот-помошник.\n\nЯ могу попробовать ответить на твой вопрос, но для этого Вы должны его задать используя или ответ на это сообщение, или используя формат `/deepseek ВОПРОС`\n\nВы так же можете давать ответ на сообщение в цепочке обсуждения которого есть вопрос ко мне, я тогда проанализирую всю цепочку вопросов-ответов и выдам более релевантный результат.', true);
-				Promise.all(mess).then(mess => {
-					mess?.forEach(m => {
-						if(m?.message_id){
-							ctx.update.message = m;
-							//Сохраняем ответ DeepSeek в БД для получения полноценного диалога, но только если смогли отправить ответ в телеграм
-							telegram_db.addMessage2DB(ctx, chat, botInfo, m).then();
-						}
-					});
-				});
-
-				return mess;
+				return sendHelpMessageIA(ctx);
 			}
 		}
 	}

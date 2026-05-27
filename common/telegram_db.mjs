@@ -242,3 +242,14 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
 	})
 	.filter(row => !!row)
 	?.filter(mess => !!mess?.content);
+
+export const getChats = async(chat_id) => db.query(`
+    SELECT ID, CLEAR_INTERVAL
+    FROM CHATS
+    ORDER BY ID;`);
+
+export const removeMessages = async(chat_id, interval) => chat_id && interval && db.query(`
+    WITH DEL AS (
+        DELETE FROM MESSAGES WHERE CHAT_ID = $1::BIGINT AND TIMESTAMP < NOW() - $2::INTERVAL RETURNING MESSAGES.MESSAGE_ID)
+    SELECT COUNT(*)
+    FROM DEL;`);
