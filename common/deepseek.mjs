@@ -321,14 +321,20 @@ export const deepSeekTalks = async(ctx, analyse) => {
 			const chat = message.chat;
 			const user = message.from;
 
-			const text = message.text.replace(/^\/deepseek(?:_analyse)?(?:@\w+)?\s*/igm, '').trim();
+			const text = message.text.replace(/^\/deepseek(?:_analyse)?(?:@\w+)?\s+/igm, '').trim();
+			console.log('message.text');
+			console.log(message.text);
+			console.log('text');
+			console.log(text);
 			if(text){
 
 				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
 				await telegram_db.addMessage2DB(ctx, chat, user, message).catch(console.error);
 
 				// Получаем историю сообщений
-				const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, message.chat?.id, message.message_id);
+				const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id);
+				console.log('messages');
+				console.log(messages);
 
 				if(messages?.length > 0){
 					// Уведомляем, что получили запрос и начали готовить ответ
