@@ -89,24 +89,20 @@ telegram.bot.command('deepseek_summary', async(ctx) => { deepseek.deepSeekSummar
 
 telegram.bot.command('get_ai_settints', async(ctx) => {
 	if(await telegram.requireChatAdmin(ctx)){
-		let msg      = 'Текущие настройки АИ для чата:\n-------------------------------\n';
-		msg += 'Режим чата:\n';
+
+		telegram.sendAutoRemoveMsg(ctx, 'Текущие настройки АИ для чата:').then();
+		telegram.sendAutoRemoveMsg(ctx, 'Режим чата:').then();
 		let settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
-		logger.trace(settings).then();
 		for(let i = 0; i < settings?.length; i++){
 			const setting = settings[i];
-			logger.trace(setting).then();
-			msg += `${setting.type}: ${'`' + setting.value + '`'}\n`;
+			telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
 		}
-		msg += '\nРежим аналитики:\n';
+		telegram.sendAutoRemoveMsg(ctx, `Режим аналитики:`).then();
 		settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
 		for(let i = 0; i < settings?.length; i++){
 			const setting = settings[i];
-			logger.trace(setting).then();
-			msg += `${setting.type}: ${'`' + setting.value + '`'}\n`;
+			telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
 		}
-
-		return telegram.sendAutoRemoveMsg(ctx, msg);
 	}
 });
 
