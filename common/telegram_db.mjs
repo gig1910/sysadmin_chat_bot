@@ -219,35 +219,26 @@ export const getUsers = async(chat_id) => db.query(`
     HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
     ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`, [chat_id]);
 
-export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) => {
-	logger.trace(`SELECT U.ID AS USER_ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE_TEXT
-                  FROM MESSAGES M
-                           JOIN USERS U ON M.USER_ID = U.ID
-                  WHERE M.CHAT_ID = $1::BIGINT
-                    AND M.TIMESTAMP >= NOW() - INTERVAL '${interval ? interval : '2 HOURS'}'
-                  ORDER BY M.TIMESTAMP;`).then();
+export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) => (await db.query(`SELECT U.ID AS USER_ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE_TEXT
+                                                                                                  FROM MESSAGES M
+                                                                                                           JOIN USERS U ON M.USER_ID = U.ID
+                                                                                                  WHERE CHAT_ID = $1::BIGINT
+                                                                                                    AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
+                                                                                                  ORDER BY TIMESTAMP;`,
+	[chat_id]))
+	?.rows?.map(row => {
+		if(row){
+			// Отрезаем командный текст, если он есть
+			const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text?.replace(/\s+/igm, ' '));
+			return {
+				role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
+				name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
+				content: arr ? arr[1] : row.message_text
+			};
 
-	return (await db.query(`SELECT U.ID AS USER_ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE_TEXT
-                            FROM MESSAGES M
-                                     JOIN USERS U ON M.USER_ID = U.ID
-                            WHERE CHAT_ID = $1::BIGINT
-                              AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
-                            ORDER BY TIMESTAMP;`,
-		[chat_id]))
-		?.rows?.map(row => {
-			if(row){
-				// Отрезаем командный текст, если он есть
-				const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text?.replace(/\s+/igm, ' '));
-				return {
-					role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
-					name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
-					content: arr ? arr[1] : row.message_text
-				};
-
-			}else{
-				return null;
-			}
-		})
-		.filter(row => !!row)
-		?.filter(mess => !!mess?.content);
-}
+		}else{
+			return null;
+		}
+	})
+	.filter(row => !!row)
+	?.filter(mess => !!mess?.content);

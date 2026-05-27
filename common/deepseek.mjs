@@ -3,8 +3,6 @@ import logger                          from "./logger.mjs";
 import * as telegram                   from "./telegram.mjs";
 import * as telegram_db                from "./telegram_db.mjs";
 import {query}                         from "./db.mjs";
-import {getMessagesFromChatByInterval} from "./telegram_db.mjs";
-import context                         from "telegraf/src/context";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
