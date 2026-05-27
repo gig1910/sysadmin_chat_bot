@@ -312,6 +312,8 @@ export const deepSeekTalks = async(ctx, analyse) => {
 	}
 
 	const message = telegram.getCtxMessage(ctx);
+	console.log('message');
+	console.log(message);
 	if(message && message?.message_id && message?.text){
 		// Очистка запроса от текста команды
 		const botInfo = ctx?.botInfo;
