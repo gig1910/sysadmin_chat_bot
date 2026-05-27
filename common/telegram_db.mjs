@@ -1,9 +1,33 @@
-import {stringify}   from 'flatted';
 import * as db       from './db.mjs';
 import * as telegram from './telegram.mjs';
 
 //-----------------------------------
 
+const json = (obj) => obj == null ? null : JSON.stringify(obj, null, '');
+
+const jsonSafe = (obj) => {
+	const seen = new WeakSet();
+
+	return JSON.stringify(obj, (key, value) => {
+		if(typeof value === 'bigint'){
+			return value.toString();
+		}
+
+		if(typeof value === 'function' || typeof value === 'symbol'){
+			return undefined;
+		}
+
+		if(value && typeof value === 'object'){
+			if(seen.has(value)){
+				return '[Circular]';
+			}
+
+			seen.add(value);
+		}
+
+		return value;
+	});
+};
 
 /**
  * @typedef Chat
@@ -45,7 +69,7 @@ export const addChat2DB = async chat => db.query(`
                                           JOIN_TO_SEND_MESSAGES=EXCLUDED.JOIN_TO_SEND_MESSAGES,
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           RAW=EXCLUDED.RAW;`,
-	[chat?.id, chat?.type, chat?.title, chat?.invite_link, stringify(chat?.permissions), chat?.join_to_send_messages, chat?.max_reaction_count, stringify(chat)]
+	[chat?.id, chat?.type, chat?.title, chat?.invite_link, json(chat?.permissions), chat?.join_to_send_messages, chat?.max_reaction_count, json(chat)]
 );
 
 /**
@@ -65,7 +89,7 @@ export const addUser2DB = async user => db.query(`
                                           HAS_PRIVATE_FORWARDS=EXCLUDED.HAS_PRIVATE_FORWARDS,
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           RAW=EXCLUDED.RAW;`,
-	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, stringify(user)]
+	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, json(user)]
 );
 
 /**
@@ -129,7 +153,7 @@ export const addMessage2DB = async(ctx, chat, user, message) => db.query(`
             INSERT INTO MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, ($5::JSONB - 'telegram'))
             ON CONFLICT DO NOTHING;`,
-	[message?.message_id, chat?.id, user?.id, stringify(message), stringify(ctx)]);
+	[message?.message_id, chat?.id, user?.id, json(message), jsonSafe(ctx)]);
 
 /**
  * Получаем историю сообщений по связке "ответ на" начиная с переданного id
@@ -300,15 +324,15 @@ export const insertAIRequest = async(ai_id, ai_kind, ai_model, messages) =>
                         VALUES ($1::JSONB, $2:: INT, $3:: SMALLINT, $4:: SMALLINT) RETURNING ID)
                      SELECT ID
                      FROM INS;`,
-		[JSON.stringify(messages, null, ''), ai_id, ai_kind, ai_model]))?.rows?.[0]?.id;
+		[json(messages), ai_id, ai_kind, ai_model]))?.rows?.[0]?.id;
 
 export const updateAIRequest = async(id, response, error) =>
 	response ? (await db.query(`UPDATE AI_REQUEST
                                 SET ANSWER           = $1::JSONB,
                                     ANSWER_TIMESTAMP = NOW()
-                                WHERE ID = $2:: INT;`, [JSON.stringify(response, null, ''), id]))
+                                WHERE ID = $2:: INT;`, [json(response), id]))
 		: error ? (await db.query(`UPDATE AI_REQUEST
                                    SET ERROR           = $1::JSONB,
                                        ERROR_TIMESTAMP = NOW()
-                                   WHERE ID = $2:: INT;`, [JSON.stringify(error, null, ''), id]))
+                                   WHERE ID = $2:: INT;`, [json(error), id]))
 			: null;

@@ -24,7 +24,6 @@
   "homepage": "https://github.com/gig1910/sysadmin_chat_bot#readme",
   "dependencies": {
     "dotenv": "^17.4.2",
-    "flatted": "^3.4.2",
     "markdown-it": "^14.1.0",
     "node-fetch": "^3.3.2",
     "openai": "^4.85.4",
