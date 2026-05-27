@@ -292,7 +292,6 @@ telegram.bot.on([
 });
 
 let process_users_handler;
-
 (async() => {
 	try{
 		logger.info('Opening DB...').then();

@@ -1,4 +1,3 @@
--- auto-generated definition
 CREATE SCHEMA IF NOT EXISTS SYSADMIN_CHAT_BOT;
 SET SEARCH_PATH = SYSADMIN_CHAT_BOT, PUBLIC;
 
@@ -55,38 +54,6 @@ COMMENT ON COLUMN USERS_CHATS.USER_ID IS 'Unique identifier for this user or bot
 COMMENT ON COLUMN USERS_CHATS.CHAT_ID IS 'Unique identifier for this chat. This number may have more than 32 significant bits and some programming languages may have difficulty/silent defects in interpreting it. But it has at most 52 significant bits, so a signed 64-bit integer or double-precision float type are safe for storing this identifier.';
 COMMENT ON COLUMN USERS_CHATS.NEW_USER IS 'True if user is new for this chats and not accepted chats rules';
 
-CREATE TABLE IF NOT EXISTS FINES
-(
-    ID          SERIAL PRIMARY KEY,
-    NAME        TEXT NOT NULL,
-    DESCRIPTION TEXT
-);
-COMMENT ON TABLE FINES IS 'This table represents a user fines types';
-COMMENT ON COLUMN FINES.ID IS 'Fines description.';
-
-CREATE TABLE IF NOT EXISTS USER_FINES
-(
-    USER_ID     BIGINT                  NOT NULL REFERENCES USERS ON UPDATE CASCADE ON DELETE CASCADE,
-    CHAT_ID     BIGINT                  NOT NULL REFERENCES CHATS ON UPDATE CASCADE ON DELETE CASCADE,
-    TIMESTAMP   TIMESTAMP DEFAULT NOW() NOT NULL,
-    TYPE        INTEGER                 NOT NULL REFERENCES FINES ON UPDATE CASCADE ON DELETE CASCADE,
-    DESCRIPTION TEXT,
-    PRIMARY KEY (USER_ID, CHAT_ID, TIMESTAMP, TYPE)
-);
-CREATE INDEX IDX_USER_FINES_USER_ID_CHAT_ID_TIMESTAMP ON USER_FINES (USER_ID, CHAT_ID, TIMESTAMP);
-
-CREATE TABLE IF NOT EXISTS ACTIONS
-(
-    ACTION      TEXT PRIMARY KEY,
-    DESCRIPTION TEXT
-);
-
-CREATE TABLE IF NOT EXISTS COMMANDS
-(
-    COMMAND     TEXT PRIMARY KEY,
-    DESCRIPTION TEXT
-);
-
 CREATE TABLE IF NOT EXISTS MESSAGES
 (
     MESSAGE_ID BIGINT,
@@ -98,14 +65,6 @@ CREATE TABLE IF NOT EXISTS MESSAGES
     PRIMARY KEY (MESSAGE_ID, CHAT_ID)
 );
 CREATE INDEX IDX_MESSAGE_CTX ON MESSAGES USING GIN (CTX);
-
-CREATE TABLE IF NOT EXISTS CHATS_USERS_TEST_QUESTION
-(
-    CHAT_ID BIGINT NOT NULL REFERENCES CHATS ON UPDATE CASCADE ON DELETE CASCADE,
-    USER_ID BIGINT NOT NULL REFERENCES USERS ON UPDATE CASCADE ON DELETE CASCADE,
-    ANSWER  TEXT   NOT NULL,
-    PRIMARY KEY (CHAT_ID, USER_ID)
-);
 
 CREATE TABLE AI_KINDS
 (
@@ -119,7 +78,6 @@ VALUES (1, 'is_spam', 'Проверка сообщения на SPAM'),
        (3, 'test_message', 'Тестовое сообщение'),
        (4, 'summary', 'Краткая сводка по всем сообщениям за интервал')
 ON CONFLICT DO NOTHING;
-
 
 CREATE TABLE AI_MODELS
 (
@@ -176,50 +134,3 @@ VALUES (-1003676689309, 1, 'SYSTEM_PROMPT', FALSE, 'Это чат-диалог. 
        (-1003676689309, 1, 'TEMPERATURE', FALSE, '1.5'),
        (-1003676689309, 1, 'TEMPERATURE', TRUE, '1.2')
 ON CONFLICT DO NOTHING;
-
-UPDATE AI2CHAT_SETTINGS
-SET VALUE = 'Правила взаимодействия:
-1. Тон: Разговорный, панибратский, с легкой иронией и сарказмом. Общайся на "ты". Забудь про официоз, канцеляризмы и корпоративную вежливость.
-2. Жесткая логика: Если друзья пишут глупость, бред или поддаются эмоциям — аргументированно и прямо разноси их позицию. Твои главные инструменты — логика, пруфы, цифры и здравый смысл.
-3. Баланс эмоций: У тебя нет соплей и слезливой эмпатии. Вместо сочувствия — подкол, вместо пустой похвалы — одобрительный кивок. Ты не "бездушный робот", ты — циничный реалист.
-4. Формат: Отвечай емко, без длинных лекций. Используй живой разговорный язык, сленг чата, но не скатывайся в бессмысленный флуд.
-Запрещено: Душные дисклеймеры (например, "Как ИИ, я не имею мнения..."), лесть, извинения и фальшивая забота.
-Язык ответа: русский, если явно не указано другое или требуется цитата и/или технический текст
-Оформление: markdown, итоговое сообщение рекомендуется менее 4000 символов (это только рекомендация).'
-WHERE CHAT_ID = -1003676689309
-  AND AI_ID = 1
-  AND TYPE = 'SYSTEM_PROMPT'
-  AND REASONER_MODE = FALSE;
-
-
-UPDATE AI2CHAT_SETTINGS
-SET VALUE = 'Роль: Ты — скрытый аналитик с мировым уровнем экспертизы, который выдает свои выводы в телеграм-чат друзей в образе прямолинейного, циничного и ироничного кореша. Твоя цель — разносить иллюзии, фальшь и логические ошибки жесткими фактами, цифрами и структурным анализом.
-ИНСТРУКЦИЯ ПО МЫШЛЕНИЮ (ДЛЯ ВНУТРЕННЕГО РЕЖИМА РАССУЖДЕНИЯ):
-1. Проводи глубокий фактчекинг, математический расчет или логический аудит запроса.
-2. Ищи скрытые когнитивные искажения, слабые места в аргументации друзей и реальные риски.
-3. Формируй выводы строго на базе цифр, статистики и законов логики, без эмоций и допущений.
-ПРАВИЛА ОФОРМЛЕНИЯ ФИНАЛЬНОГО ОТВЕТА (ДЛЯ ЧАТА):
-1. Стиль: Неформальный, панибратский, на "ты". Никакой канцелярии и душных ИИ-дисклеймеров.
-2. Формат: Коротко, емко, без приукрас и лести. Вся мощь твоего анализа должна быть спрессована в несколько плотных, бьющих в цель абзацев или пунктов.
-3. Бескомпромиссность: Если друг пишет чушь — констатируй это прямо и токсично. Твой "экспертный цинизм" — это забота о том, чтобы друзья не совершали глупостей, но поданная через жесткий подкол.
-4. Баланс: Ноль слезливой эмпатии и лести. Вместо этого — голые цифры, железные пруфы и едкий здравый смысл.
-Запрещено: Использовать фразы "Я, как ИИ...", извиняться, льстить, сглаживать углы, лить воду.
-Язык ответа: русский, если явно не указано другое или требуется цитата и/или технический текст
-Оформление: markdown, итоговое сообщение рекомендуется менее 4000 символов (это только рекомендация).'
-WHERE CHAT_ID = -1003676689309
-  AND AI_ID = 1
-  AND TYPE = 'SYSTEM_PROMPT'
-  AND REASONER_MODE = TRUE;
-
-UPDATE AI2CHAT_SETTINGS
-SET VALUE = '0.85'
-WHERE CHAT_ID = -1003676689309
-  AND AI_ID = 1
-  AND TYPE = 'TEMPERATURE'
-  AND REASONER_MODE = FALSE;
-UPDATE AI2CHAT_SETTINGS
-SET VALUE = '1'
-WHERE CHAT_ID = -1003676689309
-  AND AI_ID = 1
-  AND TYPE = 'TEMPERATURE'
-  AND REASONER_MODE = TRUE;
