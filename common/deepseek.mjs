@@ -191,7 +191,7 @@ async function sendAnswerIA(ctx, answer){
 	const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
 		const botInfo = ctx?.botInfo;
-		const chat = message.chat;
+		const chat    = message.chat;
 
 		let mess;
 		if(answer){
@@ -235,7 +235,7 @@ async function sendHelpMessageIA(ctx){
 	const message = ctx?.update?.message || ctx?.update?.edited_message;
 	if(message?.message_id){
 		const botInfo = ctx?.botInfo;
-		const chat = message.chat;
+		const chat    = message.chat;
 
 		let mess = await telegram.replyMessage(ctx, message?.message_id, 'Привет, я бот-помошник.\n\nЯ могу попробовать ответить на твой вопрос, но для этого Вы должны его задать используя или ответ на это сообщение, или используя формат `/deepseek ВОПРОС`\n\nВы так же можете давать ответ на сообщение в цепочке обсуждения которого есть вопрос ко мне, я тогда проанализирую всю цепочку вопросов-ответов и выдам более релевантный результат.', true);
 		Promise.all(mess).then(mess => {
@@ -296,12 +296,14 @@ export async function testMessage(ctx){
 	if(message?.message_id && message?.text){
 		const chat = message.chat;
 
-		const arr       = (/\/deepseek_test_spam (.*)/gmi).exec(message.text.replace(/\s+/igm, ' '));
-		const _messages = [{role: 'user', content: arr?.length ? arr[1] : message?.text}];
+		const arr = (/\/deepseek_test_spam (.*)/gmi).exec(message.text.replace(/\s+/igm, ' '));
+		if(arr?.[1]){
+			const _messages = [{role: 'user', content: arr[1]}];
 
-		const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_TEST_MESSAGE, 'Check the message and answer only YES or NO if the message looks like SPAM');
+			const _answer = await sendMessages2AI(AI_ID, _messages, chat?.id, false, IS_TEST_MESSAGE, 'Check the message and answer only YES or NO if the message looks like SPAM');
 
-		return _answer?.content?.toUpperCase().includes('YES') ? 'YES' : 'NO';
+			return _answer?.content?.toUpperCase().includes('YES') ? 'YES' : 'NO';
+		}
 	}
 }
 
@@ -415,8 +417,8 @@ export const deepSeekSummary = async(ctx) => {
 				const messages = await telegram_db.getMessagesFromChatByInterval(message.chat?.id, ctx?.botInfo?.id, interval);
 				if(messages?.length > 0){
 
-					const summaryPrompt = (await db.query(`'SELECT VALUE FROM AI2CHAT_SETTINGS WHERE AI_ID=$1::INT AND CHAT_ID=$2::BIGINT AND TYPE='SUMMARY_PROMPT' LIMIT 1`,
-						[AI_ID, chat?.id]))?.rows?.[0]?.value;
+					const summaryPrompt = (await db.query(`'SELECT VALUE FROM AI2CHAT_SETTINGS WHERE AI_ID=$1::INT AND CHAT_ID=$2::BIGINT AND TYPE=$3::TEXT LIMIT 1`,
+						[AI_ID, chat?.id, 'SUMMARY_PROMPT']))?.rows?.[0]?.value;
 					if(summaryPrompt){
 						// Уведомляем, что получили запрос и начали готовить ответ
 						const _waitMessage = await showWaitMessage(ctx);
