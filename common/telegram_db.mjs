@@ -219,12 +219,16 @@ export const getUsers = async(chat_id) => db.query(`
     HAVING NOW() - MAX(M.TIMESTAMP) >= MAKE_INTERVAL(0, 0, 0, 0, 3)
     ORDER BY NOW() - MAX(M.TIMESTAMP) DESC, UC.USER_ID;`, [chat_id]);
 
-export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) => (await db.query(`SELECT U.ID AS USER_ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE_TEXT
-                                                                                                  FROM MESSAGES M
-                                                                                                           JOIN USERS U ON M.USER_ID = U.ID
-                                                                                                  WHERE CHAT_ID = $1::BIGINT
-                                                                                                    AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
-                                                                                                  ORDER BY TIMESTAMP;`,
+export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval) =>
+	(await db.query(`
+                SELECT U.ID AS USER_ID, U.USERNAME, M.MESSAGE ->> 'text' AS MESSAGE_TEXT
+                FROM MESSAGES M
+                         JOIN USERS U
+                              ON M.USER_ID = U.ID
+                WHERE CHAT_ID = $1::BIGINT
+                  AND TIMESTAMP >= NOW() - '${interval ? interval : '2 HOURS'}'::INTERVAL
+                  AND M.MESSAGE ->> 'text' NOT LIKE '@sysadmin_chat_bot%' -- Убираем вызовы команд бота
+                ORDER BY TIMESTAMP;`,
 	[chat_id]))
 	?.rows?.map(row => {
 		if(row){
