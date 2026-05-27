@@ -92,13 +92,18 @@ telegram.bot.command('get_ai_settints', async(ctx) => {
 		let msg      = 'Текущие настройки АИ для чата:\n-------------------------------\n';
 		msg += 'Режим чата:\n';
 		let settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
+		logger.trace(settings).then();
 		for(let i = 0; i < settings?.length; i++){
-			msg += `${settings[i].type}: ${'`' + settings[i].type + '`'}\n`;
+			const setting = settings[i];
+			logger.trace(setting).then();
+			msg += `${setting.type}: ${'`' + setting.value + '`'}\n`;
 		}
 		msg += '\nРежим аналитики:\n';
 		settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
 		for(let i = 0; i < settings?.length; i++){
-			msg += `${settings[i].type}: ${'`' + settings[i].type + '`'}\n`;
+			const setting = settings[i];
+			logger.trace(setting).then();
+			msg += `${setting.type}: ${'`' + setting.value + '`'}\n`;
 		}
 
 		return telegram.sendAutoRemoveMsg(ctx, msg);
