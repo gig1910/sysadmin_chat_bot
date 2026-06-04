@@ -115,7 +115,7 @@ telegram.bot.command('deepseek_summary', async(ctx) => {
 	return res;
 });
 
-telegram.bot.command('get_ai_settints', async(ctx) => {
+telegram.bot.command('get_ai_settings', async(ctx) => {
 	if(await telegram.requireChatAdmin(ctx)){
 		telegram.sendAutoRemoveMsg(ctx, 'Текущие настройки АИ для чата:').then();
 		telegram.sendAutoRemoveMsg(ctx, 'Режим чата:').then();
@@ -135,7 +135,7 @@ telegram.bot.command('get_ai_settints', async(ctx) => {
 	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 });
 
-telegram.bot.command('set_ai_settints', async(ctx) => {
+telegram.bot.command('set_ai_settings', async(ctx) => {
 	if(await telegram.requireChatAdmin(ctx)){
 		// Очистка текста от самой команды
 		const message = telegram.getCtxMessage(ctx);
