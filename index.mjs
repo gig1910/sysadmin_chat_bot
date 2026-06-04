@@ -35,7 +35,7 @@ telegram.bot.command('getchatid', async(ctx) => {
 		}
 	}
 
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 	return res;
 });
 
@@ -89,21 +89,21 @@ telegram.bot.command('deepseek_test_spam', async(ctx) => {
 			false);
 	}
 
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 	return res;
 });
 
 telegram.bot.command('deepseek', async(ctx) => {
 	const res = deepseek.deepSeekTalks(ctx);
 
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 	return res;
 });
 
 telegram.bot.command('deepseek_analyse', async(ctx) => {
 	const res = deepseek.deepSeekTalks(ctx, true);
 
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 	return res;
 });
 
@@ -132,7 +132,7 @@ telegram.bot.command('get_ai_settints', async(ctx) => {
 		}
 	}
 
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 });
 
 telegram.bot.command('set_ai_settints', async(ctx) => {
@@ -159,7 +159,7 @@ telegram.bot.command('set_ai_settints', async(ctx) => {
 		}
 	}
 
-	telegram.deleteMessage(ctx).then(); // Удаляем команду
+	// telegram.deleteMessage(ctx).then(); // Удаляем команду
 });
 
 
