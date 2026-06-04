@@ -130,6 +130,10 @@ telegram.bot.command('get_ai_settings', async(ctx) => {
 			const setting = settings[i];
 			telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
 		}
+
+	}else{
+		// Команда не от админа
+		logger.info('Команда `\get_ai_settings` не от админа чата').then();
 	}
 
 	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
@@ -157,6 +161,10 @@ telegram.bot.command('set_ai_settings', async(ctx) => {
 		}else{
 			return telegram.sendAutoRemoveMsg(ctx, 'Неверная команда. Требуется указать в формате ```MODE NAME VALUE```', true);
 		}
+
+	}else{
+		// Команда не от админа
+		logger.info('Команда `\get_ai_settings` не от админа чата').then();
 	}
 
 	// telegram.deleteMessage(ctx).then(); // Удаляем команду
