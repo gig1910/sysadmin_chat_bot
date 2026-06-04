@@ -72,7 +72,7 @@ telegram.bot.command('question', async(ctx) => {
 		);
 	}
 
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 	return res;
 });
 
@@ -111,7 +111,7 @@ telegram.bot.command('deepseek_summary', async(ctx) => {
 	logger.log(`Команда 'deepseek_summary'`);
 	const res = deepseek.deepSeekSummary(ctx);
 
-	telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 	return res;
 });
 
