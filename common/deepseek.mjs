@@ -333,7 +333,9 @@ export const deepSeekTalks = async(ctx, analyse) => {
 				await telegram_db.addMessage2DB(ctx, chat, user, message).catch(console.error);
 
 				// Получаем историю сообщений
-				const messages = await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id);
+				const messages = (await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id))
+					?.map(el => ({role: el?.role, name: el?.name, content: JSON.stringify({role: el?.role, name: el?.name, content: el?.content}, null, '')}));
+
 				console.log('messages');
 				console.log(messages);
 
