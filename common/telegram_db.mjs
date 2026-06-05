@@ -160,9 +160,10 @@ export const addMessage2DB = async(ctx, chat, user, message) => db.query(`
  * @param {Number} bot_id
  * @param {Number} chat_id
  * @param {Number} from_message_id
+ * @param {Object} [settings]
  * @returns {Promise<[{role: String, content: String}]>}
  */
-export const getMessagesReplyLink = async(bot_id, chat_id, from_message_id) => (await db.query(
+export const getMessagesByReplyLink = async(bot_id, chat_id, from_message_id, settings) => (await db.query(
 	`WITH RECURSIVE MESS AS (SELECT M.CHAT_ID,
                                     M.MESSAGE_ID,
                                     (M.MESSAGE -> 'from' ->> 'id')::BIGINT                     AS USER_ID,
@@ -185,13 +186,15 @@ export const getMessagesReplyLink = async(bot_id, chat_id, from_message_id) => (
      FROM MESS M
               JOIN USERS U ON M.USER_ID = U.ID
      ORDER BY M.TS
-     LIMIT 20;`, [from_message_id, chat_id]))?.rows?.map(row => {
+     LIMIT ${settings?.MESSAGE_LIMIT ?? 20};`, [from_message_id, chat_id]))?.rows?.map(row => {
 	if(row){
 		// Отрезаем командный текст, если он есть
 		const arr = (/\/\w+\s?(.*)?/gmi).exec(row.message_text?.replace(/\s+/igm, ' '));
 		return {
 			role:    (parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user'), // только 'system', 'user', 'assistant', 'tool',
 			name:    (parseInt(row.user_id, 10) === bot_id ? null : row.username),
+			message_id: row.message_id,
+			reply_to: row.reply_id,
 			content: arr ? arr[1] : row.message_text
 		};
 
@@ -204,9 +207,10 @@ export const getMessagesReplyLink = async(bot_id, chat_id, from_message_id) => (
  * Проверка, что ответ на сообщение был на цепочку сообщений общения с DeepSeek
  * @param {Number} chat_id
  * @param {Number} from_message_id
+ * @param {Object} [settings]
  * @returns {Promise<Boolean>}
  */
-export const hasDeepSeekTalkMarker = async(chat_id, from_message_id) => !!(await db.query(
+export const hasDeepSeekTalkMarker = async(chat_id, from_message_id, settings) => !!(await db.query(
 	`SELECT EXISTS(SELECT *
                    FROM (WITH RECURSIVE MESS AS (SELECT M.CHAT_ID,
                                                         M.MESSAGE_ID,
@@ -229,7 +233,7 @@ export const hasDeepSeekTalkMarker = async(chat_id, from_message_id) => !!(await
                          SELECT *
                          FROM MESS
                          ORDER BY TS
-                         LIMIT 20) _
+                         LIMIT ${settings?.MESSAGE_LIMIT ?? 20}) _
                    WHERE UPPER(SUBSTRING(MESSAGE_TEXT FROM 1 FOR 9)) = '/DEEPSEEK');`, [from_message_id, chat_id]))?.rows[0].exists;
 
 export const getNotPrivateChats = async() => db.query(`

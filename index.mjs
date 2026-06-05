@@ -6,6 +6,7 @@ import * as logger from './common/logger.mjs';
 import * as telegram    from './common/telegram.mjs';
 import * as telegram_db from './common/telegram_db.mjs';
 import * as deepseek    from './common/deepseek.mjs';
+import {AI_ID}          from "./common/deepseek.mjs";
 
 //-----------------------------
 
@@ -302,8 +303,12 @@ telegram.bot.on([
 				}
 
 			}else if(message?.reply_to_message){
+
+				const aiSettings = {};
+				(await telegram_db.getChatAISettings(ctx, AI_ID))?.map(el => aiSettings[el?.type] = el?.value);
+
 				if(message?.reply_to_message?.text?.substring(0, 23) === 'Привет, я бот-помошник.' ||
-				   await telegram_db.hasDeepSeekTalkMarker(message.chat?.id, message?.reply_to_message?.message_id)){
+				   await telegram_db.hasDeepSeekTalkMarker(message.chat?.id, message?.reply_to_message?.message_id, aiSettings)){
 					// Продолжаем диалог
 					return deepseek.deepSeekTalks(ctx);
 				}

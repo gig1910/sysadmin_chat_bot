@@ -329,12 +329,16 @@ export const deepSeekTalks = async(ctx, analyse) => {
 			console.log(text);
 			if(text){
 
+				// Получаем настройки чата из БД
+				const aiSettings = {};
+				(await telegram_db.getChatAISettings(ctx, AI_ID, !!analyse))?.map(el => aiSettings[el?.type] = el?.value);
+
 				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
 				await telegram_db.addMessage2DB(ctx, chat, user, message).catch(console.error);
 
 				// Получаем историю сообщений
-				const messages = (await telegram_db.getMessagesReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id))
-					?.map(el => ({role: el?.role, name: el?.name, content: JSON.stringify({role: el?.role, name: el?.name, content: el?.content}, null, '')}));
+				const messages = (await telegram_db.getMessagesByReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id, aiSettings))
+					?.map(el => ({role: el?.role, name: el?.name, content: JSON.stringify({role: el?.role, name: el?.name, message_id: el?.message_id, reply_to: el?.reply_to, content: el?.content}, null, '')}));
 
 				console.log('messages');
 				console.log(messages);
