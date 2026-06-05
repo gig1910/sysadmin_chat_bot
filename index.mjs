@@ -305,7 +305,7 @@ telegram.bot.on([
 			}else if(message?.reply_to_message){
 
 				const aiSettings = {};
-				(await telegram_db.getChatAISettings(ctx, AI_ID))?.map(el => aiSettings[el?.type] = el?.value);
+				(await telegram_db.getChatAISettings(ctx, AI_ID))?.rows?.map(el => aiSettings[el?.type] = el?.value);
 
 				if(message?.reply_to_message?.text?.substring(0, 23) === 'Привет, я бот-помошник.' ||
 				   await telegram_db.hasDeepSeekTalkMarker(message.chat?.id, message?.reply_to_message?.message_id, aiSettings)){

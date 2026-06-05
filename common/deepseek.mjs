@@ -331,7 +331,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 
 				// Получаем настройки чата из БД
 				const aiSettings = {};
-				(await telegram_db.getChatAISettings(ctx, AI_ID, !!analyse))?.map(el => aiSettings[el?.type] = el?.value);
+				(await telegram_db.getChatAISettings(ctx, AI_ID, !!analyse))?.rows?.map(el => aiSettings[el?.type] = el?.value);
 
 				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
 				await telegram_db.addMessage2DB(ctx, chat, user, message).catch(console.error);
