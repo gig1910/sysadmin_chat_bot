@@ -11,8 +11,51 @@ const GITHUB_SEARCH_TOKEN = process.env.GITHUB_SEARCH_TOKEN;
 
 const SEARCH_TIMEOUT_MS = Number.parseInt(process.env.AI_SEARCH_TIMEOUT_MS || '15000', 10);
 const FETCH_TIMEOUT_MS = Number.parseInt(process.env.AI_FETCH_TIMEOUT_MS || '20000', 10);
+const CONFIG_CHECK_TIMEOUT_MS = Number.parseInt(process.env.AI_CONFIG_CHECK_TIMEOUT_MS || '5000', 10);
 const MAX_SEARCH_RESULTS = Number.parseInt(process.env.AI_SEARCH_MAX_RESULTS || '8', 10);
 const MAX_FETCH_CHARS = Number.parseInt(process.env.AI_FETCH_MAX_CHARS || '30000', 10);
+
+const DISABLED_PROVIDER_NAMES = new Set(['none', 'off', 'false', 'disabled', 'disable', '0']);
+
+const SEARXNG_SETUP_HELP = `
+SearXNG выбран как provider общего поиска, но он не настроен или недоступен.
+
+Минимальный docker-compose.yml:
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng
+    environment:
+      - BASE_URL=http://127.0.0.1:8888/
+      - INSTANCE_NAME=sysadmin-chat-search
+
+Запуск:
+
+  docker compose up -d
+
+Проверка JSON API:
+
+  curl 'http://127.0.0.1:8888/search?q=test&format=json'
+
+.env для бота:
+
+  AI_ALLOW_INTERNET=true
+  AI_SEARCH_PROVIDER=searxng
+  SEARXNG_URL=http://127.0.0.1:8888
+
+Если общий поиск не нужен, но нужны специализированные tools:
+
+  AI_ALLOW_INTERNET=true
+  AI_SEARCH_PROVIDER=none
+
+Если SearXNG отвечает HTML/ошибкой вместо JSON, проверь, что JSON format разрешён в настройках SearXNG.
+`.trim();
 
 export const AI_TOOLS_SYSTEM_PROMPT = `
 Доступны внешние инструменты.
@@ -195,7 +238,7 @@ function getConfiguredSearchProviderNames(){
 	return String(process.env.AI_SEARCH_PROVIDERS || process.env.AI_SEARCH_PROVIDER || 'searxng')
 		.split(',')
 		.map(provider => provider.trim().toLowerCase())
-		.filter(Boolean);
+		.filter(provider => provider && !DISABLED_PROVIDER_NAMES.has(provider));
 }
 
 function getSearchProviderConfig(providerName){
@@ -204,28 +247,34 @@ function getSearchProviderConfig(providerName){
 			return {
 				name: 'searxng',
 				configured: !!SEARXNG_URL,
-				search: searxngSearch
+				search: searxngSearch,
+				setup_help: SEARXNG_SETUP_HELP
 			};
 
 		case 'brave':
 			return {
 				name: 'brave',
 				configured: !!BRAVE_SEARCH_API_KEY,
-				search: braveSearch
+				search: braveSearch,
+				setup_help: 'Brave provider requires BRAVE_SEARCH_API_KEY.'
 			};
 
 		default:
 			return {
 				name: providerName,
 				configured: false,
-				search: null
+				search: null,
+				setup_help: `Unknown AI search provider: ${providerName}`
 			};
 	}
 }
 
+function getRequestedSearchProviders(){
+	return getConfiguredSearchProviderNames().map(getSearchProviderConfig);
+}
+
 function getConfiguredSearchProviders(){
-	return getConfiguredSearchProviderNames()
-		.map(getSearchProviderConfig)
+	return getRequestedSearchProviders()
 		.filter(provider => provider.configured && typeof provider.search === 'function');
 }
 
@@ -341,6 +390,11 @@ async function fetchJson(url, {timeoutMs = SEARCH_TIMEOUT_MS, headers = {}} = {}
 			throw new Error(`HTTP ${response.status}`);
 		}
 
+		const contentType = response.headers.get('content-type') ?? '';
+		if(!/application\/json|text\/json/i.test(contentType)){
+			throw new Error(`Expected JSON response, got content-type: ${contentType || 'unknown'}`);
+		}
+
 		return response.json();
 
 	}finally{
@@ -421,15 +475,7 @@ async function braveSearch(args){
 	};
 }
 
-async function searxngSearch(args){
-	const query = String(args?.query || '').trim();
-	if(!query){
-		throw new Error('Search query is empty.');
-	}
-
-	const count = normalizeSearchCount(args?.count);
-	const language = String(args?.language || '').trim().toLowerCase();
-
+function buildSearxngSearchUrl(query, language){
 	const url = new URL('/search', SEARXNG_URL);
 	url.searchParams.set('q', query);
 	url.searchParams.set('format', 'json');
@@ -438,12 +484,54 @@ async function searxngSearch(args){
 		url.searchParams.set('language', language);
 	}
 
+	return url;
+}
+
+function getSearxngHeaders(){
 	const headers = {};
 	if(SEARXNG_API_KEY){
 		headers['Authorization'] = `Bearer ${SEARXNG_API_KEY}`;
 	}
+	return headers;
+}
 
-	const data = await fetchJson(url, {headers});
+async function checkSearxngAvailable(){
+	if(!SEARXNG_URL){
+		throw new Error('SEARXNG_URL is not set.');
+	}
+
+	const data = await fetchJson(buildSearxngSearchUrl('searxng', ''), {
+		timeoutMs: CONFIG_CHECK_TIMEOUT_MS,
+		headers: getSearxngHeaders()
+	});
+
+	if(!data || !Array.isArray(data.results)){
+		throw new Error('SearXNG endpoint did not return a valid JSON search response with results array.');
+	}
+
+	return {
+		ok: true,
+		url: SEARXNG_URL,
+		result_count: data.results.length
+	};
+}
+
+async function searxngSearch(args){
+	const query = String(args?.query || '').trim();
+	if(!query){
+		throw new Error('Search query is empty.');
+	}
+
+	if(!SEARXNG_URL){
+		throw new Error(`SEARXNG_URL is not set.\n\n${SEARXNG_SETUP_HELP}`);
+	}
+
+	const count = normalizeSearchCount(args?.count);
+	const language = String(args?.language || '').trim().toLowerCase();
+
+	const data = await fetchJson(buildSearxngSearchUrl(query, language), {
+		headers: getSearxngHeaders()
+	});
 	const results = (data?.results ?? [])
 		.slice(0, count)
 		.map(item => buildSearchResult({
@@ -467,12 +555,34 @@ async function searxngSearch(args){
 	};
 }
 
+function makeSearchProviderError(errors){
+	const requestedProviders = getRequestedSearchProviders();
+	const usesSearxng = requestedProviders.some(provider => provider.name === 'searxng');
+	const providerErrors = errors.length ? errors.join('; ') : 'no provider details';
+
+	if(usesSearxng){
+		return new Error(`All internet search providers failed: ${providerErrors}\n\n${SEARXNG_SETUP_HELP}`);
+	}
+
+	return new Error(`All internet search providers failed: ${providerErrors}`);
+}
+
 async function internetSearch(args){
 	assertInternetAllowed();
 
-	const providers = getConfiguredSearchProviders();
+	const requestedProviders = getRequestedSearchProviders();
+	const providers = requestedProviders
+		.filter(provider => provider.configured && typeof provider.search === 'function');
+
 	if(!providers.length){
-		throw new Error('No configured internet search provider. Set AI_SEARCH_PROVIDER=searxng and SEARXNG_URL, or AI_SEARCH_PROVIDER=brave and BRAVE_SEARCH_API_KEY.');
+		const errors = requestedProviders.map(provider => {
+			if(provider.name === 'searxng'){
+				return 'searxng: SEARXNG_URL is not set or provider is not configured';
+			}
+			return `${provider.name}: ${provider.setup_help || 'provider is not configured'}`;
+		});
+
+		throw makeSearchProviderError(errors);
 	}
 
 	const errors = [];
@@ -492,7 +602,7 @@ async function internetSearch(args){
 		}
 	}
 
-	throw new Error(`All internet search providers failed: ${errors.join('; ')}`);
+	throw makeSearchProviderError(errors);
 }
 
 function isPrivateIPv4(host){
@@ -724,6 +834,62 @@ async function githubSearch(args){
 		count: results.length,
 		results
 	};
+}
+
+function makeConfigWarning(provider, message, help){
+	return {
+		level: 'warn',
+		provider,
+		message,
+		help
+	};
+}
+
+export async function checkAIToolsConfig(){
+	const warnings = [];
+
+	if(!AI_ALLOW_INTERNET){
+		return warnings;
+	}
+
+	const requestedProviders = getRequestedSearchProviders();
+	for(const provider of requestedProviders){
+		if(provider.name === 'searxng'){
+			if(!SEARXNG_URL){
+				warnings.push(makeConfigWarning(
+					'searxng',
+					'SearXNG search provider is enabled, but SEARXNG_URL is not set.',
+					SEARXNG_SETUP_HELP
+				));
+				continue;
+			}
+
+			try{
+				const result = await checkSearxngAvailable();
+				logger.info(`[AI tools] SearXNG check OK: ${result.url}; results=${result.result_count}`).then();
+
+			}catch(err){
+				warnings.push(makeConfigWarning(
+					'searxng',
+					`SearXNG search provider is enabled, but health check failed: ${err?.message ?? err}`,
+					SEARXNG_SETUP_HELP
+				));
+			}
+
+		}else if(!provider.configured){
+			warnings.push(makeConfigWarning(
+				provider.name,
+				`AI search provider '${provider.name}' is enabled, but it is not configured or not supported.`,
+				provider.setup_help
+			));
+		}
+	}
+
+	for(const warning of warnings){
+		logger.warn(`[AI tools] ${warning.message}\n${warning.help || ''}`).then();
+	}
+
+	return warnings;
 }
 
 export async function callAITool(name, rawArgs){
