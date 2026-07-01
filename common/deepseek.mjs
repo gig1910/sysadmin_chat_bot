@@ -2,6 +2,7 @@ import OpenAI           from 'openai';
 import logger           from './logger.mjs';
 import * as telegram    from './telegram.mjs';
 import * as telegram_db from './telegram_db.mjs';
+import {AI_TOOLS_SYSTEM_PROMPT, callAITool, getAIToolDefinitions} from './ai_tools.mjs';
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -23,8 +24,79 @@ const AI_MODEL_CHAT      = 2;
 
 const AI_CHAT_MODEL     = 'deepseek-v4-flash';
 const AI_REASONER_MODEL = 'deepseek-v4-pro';
+const MAX_AI_TOOL_ROUNDS = Number.parseInt(process.env.AI_MAX_TOOL_ROUNDS || '3', 10);
 
 export const AI_ID = 1;
+
+function isAIToolsAllowedForQuery(queryType){
+	return [IS_MESSAGE, IS_SUMMARY_MESSAGE].includes(queryType);
+}
+
+function buildSystemPrompt(systemPrompt, useTools){
+	let prompt = String(systemPrompt || '').trim();
+
+	if(useTools){
+		prompt = `${prompt ? `${prompt}\n\n` : ''}${AI_TOOLS_SYSTEM_PROMPT}`.trim();
+	}
+
+	return prompt;
+}
+
+function toolCallMessage(answer){
+	return {
+		role:       'assistant',
+		content:    answer?.content ?? null,
+		tool_calls: answer?.tool_calls
+	};
+}
+
+async function callToolsAndAppendMessages(messages, toolCalls){
+	for(const toolCall of toolCalls){
+		const toolName = toolCall?.function?.name;
+		const toolArgs = toolCall?.function?.arguments;
+
+		let toolResult;
+		try{
+			logger.info(`AI tool call: ${toolName}`).then();
+			toolResult = await callAITool(toolName, toolArgs);
+
+		}catch(err){
+			logger.err(err).then();
+			toolResult = {
+				error:   true,
+				message: err?.message ?? String(err)
+			};
+		}
+
+		messages.push({
+			role:         'tool',
+			tool_call_id: toolCall.id,
+			content:      JSON.stringify(toolResult, null, 2)
+		});
+	}
+}
+
+async function createCompletionWithTools(aiParams, useTools){
+	let completion;
+	let answer;
+
+	for(let round = 0; round < MAX_AI_TOOL_ROUNDS; round++){
+		completion = await openai.chat.completions.create(aiParams);
+		answer     = completion?.choices?.[0]?.message;
+
+		if(!useTools || !answer?.tool_calls?.length){
+			return {completion, answer};
+		}
+
+		aiParams.messages.push(toolCallMessage(answer));
+		await callToolsAndAppendMessages(aiParams.messages, answer.tool_calls);
+	}
+
+	completion = await openai.chat.completions.create({...aiParams, tool_choice: 'none'});
+	answer     = completion?.choices?.[0]?.message;
+
+	return {completion, answer};
+}
 
 /**
  * Отправка сообщения в DeepSeek
@@ -70,6 +142,10 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 			});
 		}
 
+		const useTools = isAIToolsAllowedForQuery(queryType);
+		const tools = useTools ? getAIToolDefinitions() : [];
+		systemPrompt = buildSystemPrompt(systemPrompt, tools.length > 0);
+
 		if(systemPrompt){
 			// Есть системный промпт. Добавляем его в запрос
 			messages = [{role: 'system', content: systemPrompt}].concat(messages);
@@ -83,6 +159,11 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 				temperature: temperature || 0.85,
 			};
 
+			if(tools.length > 0){
+				aiParams.tools       = tools;
+				aiParams.tool_choice = 'auto';
+			}
+
 			if(!!analyse){
 				aiParams.thinking         = {'type': 'enabled'};
 				aiParams.reasoning_effort = 'high';
@@ -91,8 +172,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 
 			logger.trace(aiParams).then();
 
-			const completion = await openai.chat.completions.create(aiParams);
-			const _answer    = completion.choices[0].message;
+			const {completion, answer: _answer} = await createCompletionWithTools(aiParams, tools.length > 0);
 
 			// Сохраняем ответ от AI
 			telegram_db.updateAIRequest(_id, completion).then();
@@ -458,4 +538,3 @@ export const deepSeekSummary = async(ctx) => {
 		}
 	}
 };
-
