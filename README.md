@@ -20,6 +20,7 @@ All HTTP-based tools are disabled unless explicitly enabled:
 AI_ALLOW_INTERNET=true
 AI_SEARCH_TIMEOUT_MS=15000
 AI_FETCH_TIMEOUT_MS=20000
+AI_CONFIG_CHECK_TIMEOUT_MS=5000
 AI_SEARCH_MAX_RESULTS=8
 AI_FETCH_MAX_CHARS=30000
 AI_MAX_TOOL_ROUNDS=3
@@ -56,6 +57,50 @@ Supported general search providers:
 
 - `searxng` — requires `SEARXNG_URL`; optional `SEARXNG_API_KEY` is sent as Bearer token.
 - `brave` — requires `BRAVE_SEARCH_API_KEY`.
+
+To disable the general search provider while keeping specialized tools enabled:
+
+```env
+AI_ALLOW_INTERNET=true
+AI_SEARCH_PROVIDER=none
+```
+
+### SearXNG startup check
+
+On startup the bot calls `checkAIToolsConfig()` before `telegram.bot.launch()`.
+
+If `AI_ALLOW_INTERNET=true` and `AI_SEARCH_PROVIDER=searxng` or `AI_SEARCH_PROVIDERS` contains `searxng`, the bot checks:
+
+```bash
+curl 'http://127.0.0.1:8888/search?q=searxng&format=json'
+```
+
+If `SEARXNG_URL` is missing, SearXNG is unavailable, or the endpoint does not return JSON with a `results` array, the bot writes a warning with setup help to the logs. The warning does not stop the bot.
+
+Minimal SearXNG compose:
+
+```yaml
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng
+    environment:
+      - BASE_URL=http://127.0.0.1:8888/
+      - INSTANCE_NAME=sysadmin-chat-search
+```
+
+Run:
+
+```bash
+docker compose up -d
+```
+
+If SearXNG returns HTML/error instead of JSON, check that JSON output is enabled in SearXNG settings.
 
 Optional GitHub token for higher limits and code search:
 
