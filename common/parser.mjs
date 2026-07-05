@@ -3,8 +3,61 @@
 import MarkdownIt from 'markdown-it';
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 4000;
+const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>()\[\]{}"']+/gim;
 
 //--------------------------------------------
+
+function rangesOverlap(aStart, aEnd, bStart, bEnd){
+	return aStart < bEnd && bStart < aEnd;
+}
+
+function isEntityRangeCovered(entities, start, end){
+	return entities.some(entity => rangesOverlap(start, end, entity.offset, entity.offset + entity.length));
+}
+
+function normalizeUrlLength(rawUrl){
+	let length = rawUrl.length;
+	while(length > 0 && /[.,!?;:)>}\]»”]$/u.test(rawUrl.substring(0, length))){
+		length--;
+	}
+	return length;
+}
+
+function normalizeEntities(message, entities = []){
+	const normalized = entities
+		.filter(entity => {
+			return (
+				entity &&
+				Number.isInteger(entity.offset) &&
+				Number.isInteger(entity.length) &&
+				entity.offset >= 0 &&
+				entity.length > 0 &&
+				entity.offset < message.length &&
+				entity.offset + entity.length <= message.length
+			);
+		});
+
+	const result = [...normalized];
+	let match;
+	URL_RE.lastIndex = 0;
+	while((match = URL_RE.exec(message)) !== null){
+		const rawUrl = match[0];
+		const length = normalizeUrlLength(rawUrl);
+		if(length <= 0){
+			continue;
+		}
+
+		const offset = match.index;
+		const end = offset + length;
+		if(isEntityRangeCovered(result, offset, end)){
+			continue;
+		}
+
+		result.push({type: 'url', offset, length});
+	}
+
+	return result.sort((a, b) => a.offset - b.offset || b.length - a.length);
+}
 
 /**
  * Парсинг и отправка сообщения по частям, в связи с ограничением API Telegram
@@ -22,6 +75,8 @@ export const parseMessageAndSaveByParts = (message) => {
 	let prefix     = '';
 	let line_break = '';
 	let bList      = false;
+	let bTable     = false;
+	let tableCellIndex = 0;
 	let entities   = [];
 	let images     = [];
 
@@ -38,6 +93,43 @@ export const parseMessageAndSaveByParts = (message) => {
 			case 'bullet_list_open':
 			case 'list_item_close':
 			case 'ordered_list_open':
+				break;
+
+			case 'table_open':
+				bTable = true;
+				tableCellIndex = 0;
+				line_break += line_break ? '' : '\n';
+				break;
+
+			case 'table_close':
+				bTable = false;
+				tableCellIndex = 0;
+				line_break += '\n';
+				break;
+
+			case 'thead_open':
+			case 'thead_close':
+			case 'tbody_open':
+			case 'tbody_close':
+			case 'tr_open':
+				break;
+
+			case 'tr_close':
+				tableCellIndex = 0;
+				line_break += '\n';
+				break;
+
+			case 'th_open':
+			case 'td_open':
+				if(bTable){
+					prefix += tableCellIndex > 0 ? ' | ' : line_break;
+					line_break = '';
+					tableCellIndex++;
+				}
+				break;
+
+			case 'th_close':
+			case 'td_close':
 				break;
 
 			case 'paragraph_close':
@@ -113,6 +205,7 @@ export const parseMessageAndSaveByParts = (message) => {
 								break;
 
 							case 'softbreak':
+							case 'hardbreak':
 								_new_message += '\n';
 								break;
 
@@ -227,6 +320,14 @@ export const parseMessageAndSaveByParts = (message) => {
 				break;
 
 			case 'code_block':
+				if(el.content){
+					_entities.push({
+						type:   'pre',
+						offset: new_message.length,
+						length: el.content.length
+					});
+					new_message += el.content;
+				}
 				break;
 
 			case 'blockquote_open':
@@ -259,7 +360,7 @@ export const parseMessageAndSaveByParts = (message) => {
 				blockquote_open = [0];
 			}
 
-			result.push({message: _message, entities: entities, images: images});
+			result.push({message: _message, entities: normalizeEntities(_message, entities), images: images});
 
 			_message = new_message;     // Запоминаем неотправленную часть как новый аккумулятор
 			entities = _entities;       // Запоминаем неотправленное оформление
@@ -278,23 +379,7 @@ export const parseMessageAndSaveByParts = (message) => {
 
 	}
 
-	const normalizeEntities = (message, entities = []) => {
-		return entities
-			.filter(entity => {
-				return (
-					entity &&
-					Number.isInteger(entity.offset) &&
-					Number.isInteger(entity.length) &&
-					entity.offset >= 0 &&
-					entity.length > 0 &&
-					entity.offset < message.length &&
-					entity.offset + entity.length <= message.length
-				);
-			});
-	};
-
 	if(_message.length > 0){
-		// result.push({message: _message, entities: entities, images: images});
 		result.push({
 			message: _message,
 			entities: normalizeEntities(_message, entities),
