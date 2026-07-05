@@ -25,6 +25,7 @@ const AI_MODEL_CHAT      = 2;
 const AI_CHAT_MODEL     = 'deepseek-v4-flash';
 const AI_REASONER_MODEL = 'deepseek-v4-pro';
 const MAX_AI_TOOL_ROUNDS = Number.parseInt(process.env.AI_MAX_TOOL_ROUNDS || '3', 10);
+const AI_OUTPUT_FORMAT_PROMPT = 'Отвечай обычным текстом с Markdown-разметкой Telegram. Не оборачивай обычный ответ в JSON-объект вида {"role":"assistant","content":"..."}, если пользователь прямо не попросил JSON.';
 
 export const AI_ID = 1;
 
@@ -33,13 +34,20 @@ function isAIToolsAllowedForQuery(queryType){
 }
 
 function buildSystemPrompt(systemPrompt, useTools){
-	let prompt = String(systemPrompt || '').trim();
+	const parts = [];
+	const prompt = String(systemPrompt || '').trim();
 
-	if(useTools){
-		prompt = `${prompt ? `${prompt}\n\n` : ''}${AI_TOOLS_SYSTEM_PROMPT}`.trim();
+	if(prompt){
+		parts.push(prompt);
 	}
 
-	return prompt;
+	parts.push(AI_OUTPUT_FORMAT_PROMPT);
+
+	if(useTools){
+		parts.push(AI_TOOLS_SYSTEM_PROMPT);
+	}
+
+	return parts.join('\n\n').trim();
 }
 
 function toolCallMessage(answer){
@@ -48,6 +56,82 @@ function toolCallMessage(answer){
 		content:    answer?.content ?? null,
 		tool_calls: answer?.tool_calls
 	};
+}
+
+function normalizeOpenAIName(name){
+	name = String(name || '').trim();
+	return /^[a-zA-Z0-9_-]{1,64}$/.test(name) ? name : null;
+}
+
+function makeAIMessageFromDb(row){
+	if(!row?.content){
+		return null;
+	}
+
+	const msg = {
+		role:    row?.role === 'assistant' ? 'assistant' : 'user',
+		content: String(row.content)
+	};
+
+	const name = normalizeOpenAIName(row?.name);
+	if(msg.role === 'user' && name){
+		msg.name = name;
+	}
+
+	return msg;
+}
+
+function stripJsonFence(content){
+	const text = String(content || '').trim();
+	const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+	return match ? match[1].trim() : text;
+}
+
+function isChatMessageLike(value){
+	return Boolean(
+		value &&
+		typeof value === 'object' &&
+		['assistant', 'user', 'system', 'tool'].includes(value.role) &&
+		typeof value.content === 'string'
+	);
+}
+
+function normalizeAnswerContent(answer){
+	let content = typeof answer === 'string' ? answer : answer?.content;
+	if(content == null){
+		return '';
+	}
+
+	if(typeof content !== 'string'){
+		return String(content);
+	}
+
+	for(let i = 0; i < 3; i++){
+		const text = stripJsonFence(content);
+		if(!/^[\[{]/.test(text)){
+			return content;
+		}
+
+		try{
+			const parsed = JSON.parse(text);
+			if(isChatMessageLike(parsed)){
+				content = parsed.content;
+				continue;
+			}
+
+			if(Array.isArray(parsed) && parsed.length === 1 && isChatMessageLike(parsed[0])){
+				content = parsed[0].content;
+				continue;
+			}
+
+			return content;
+
+		}catch(err){
+			return content;
+		}
+	}
+
+	return content;
 }
 
 async function callToolsAndAppendMessages(messages, toolCalls){
@@ -263,7 +347,7 @@ async function sendAnswerIA(ctx, answer){
 		let mess;
 		if(answer){
 			// Отправляем ответ DeepSeek как ответ на сообщение
-			mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
+			mess = await telegram.replyMessage(ctx, message?.message_id, normalizeAnswerContent(answer), true);
 			Promise.all(mess).then(mess => {
 				mess?.forEach(m => {
 					if(m?.message_id){
@@ -418,7 +502,8 @@ export const deepSeekTalks = async(ctx, analyse) => {
 
 				// Получаем историю сообщений
 				const messages = (await telegram_db.getMessagesByReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id, aiSettings))
-					?.map(el => ({role: el?.role, name: el?.name, content: JSON.stringify({role: el?.role, name: el?.name, message_id: el?.message_id, reply_to: el?.reply_to, content: el?.content}, null, '')}));
+					?.map(makeAIMessageFromDb)
+					.filter(row => !!row?.content);
 
 				console.log('messages');
 				console.log(messages);
