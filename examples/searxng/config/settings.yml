@@ -1,0 +1,22 @@
+use_default_settings: true
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  base_url: "http://127.0.0.1:8888/"
+  public_instance: false
+  limiter: false
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "ru"
+  formats:
+    - html
+    - json
+
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
