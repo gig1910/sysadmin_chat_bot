@@ -1,8 +1,16 @@
 # SearXNG for sysadmin_chat_bot
 
-This example is a local/private SearXNG instance for the bot.
+Локальный/private SearXNG instance для `internet_search` tool в `sysadmin_chat_bot`.
 
-The critical setting for JSON API access is:
+Готовый пример рассчитан на localhost-only запуск:
+
+```text
+bot -> http://127.0.0.1:8888 -> searxng container:8080
+```
+
+## Главное требование
+
+Для JSON API обязательно должен быть включён `json` в `search.formats`:
 
 ```yaml
 search:
@@ -11,19 +19,20 @@ search:
     - json
 ```
 
-If `json` is not enabled in `search.formats`, SearXNG returns `403 Forbidden` for:
+Если `json` не включён, SearXNG web UI может работать, но запрос:
 
 ```bash
 curl 'http://127.0.0.1:8888/search?q=test&format=json'
 ```
 
-while the regular web UI still works.
+вернёт `403 Forbidden`.
 
 ## Files
 
 ```text
 examples/searxng/
 ├── docker-compose.yml
+├── README.md
 └── config/
     └── settings.yml
 ```
@@ -33,16 +42,14 @@ examples/searxng/
 ```bash
 cd examples/searxng
 mkdir -p config cache
-
-# Recommended: replace server.secret_key in config/settings.yml before public exposure.
-# For localhost-only testing it is not important, but do not expose a default config publicly.
-
 docker compose up -d
 ```
 
+Контейнер слушает только `127.0.0.1:8888`, поэтому снаружи сервера по сети он недоступен без отдельного reverse proxy.
+
 ## Checks
 
-From host:
+С хоста:
 
 ```bash
 curl -i 'http://127.0.0.1:8888/'
@@ -50,26 +57,26 @@ curl -i 'http://127.0.0.1:8888/search?q=test'
 curl -i 'http://127.0.0.1:8888/search?q=test&format=json'
 ```
 
-Expected JSON check:
+Проверка JSON:
 
 ```bash
 curl -s 'http://127.0.0.1:8888/search?q=test&format=json' | jq '.results | length'
 ```
 
-From inside container:
+Из контейнера:
 
 ```bash
 docker exec -it searxng sh -lc "wget -q -O- 'http://127.0.0.1:8080/search?q=test&format=json' | head -c 500"
 ```
 
-Inspect effective config:
+Проверка effective config:
 
 ```bash
 docker exec -it searxng sh -lc "grep -nA20 '^search:' /etc/searxng/settings.yml"
 docker exec -it searxng sh -lc "grep -nA20 '^server:' /etc/searxng/settings.yml"
 ```
 
-Logs:
+Логи:
 
 ```bash
 docker logs --tail=200 searxng
@@ -77,19 +84,36 @@ docker logs --tail=200 searxng
 
 ## Bot `.env`
 
+Минимально для SearXNG provider:
+
 ```env
 AI_ALLOW_INTERNET=true
 AI_SEARCH_PROVIDER=searxng
 SEARXNG_URL=http://127.0.0.1:8888
 ```
 
+Если нужен fallback, например SearXNG -> Brave:
+
+```env
+AI_ALLOW_INTERNET=true
+AI_SEARCH_PROVIDERS=searxng,brave
+SEARXNG_URL=http://127.0.0.1:8888
+BRAVE_SEARCH_API_KEY=
+```
+
+Опционально, если перед SearXNG стоит reverse proxy с Bearer auth:
+
+```env
+SEARXNG_API_KEY=
+```
+
 ## Common failures
 
 ### Web UI works, JSON returns 403
 
-Cause: `json` is not enabled in `search.formats`.
+Причина: `json` не включён в `search.formats`.
 
-Fix:
+Исправление:
 
 ```yaml
 search:
@@ -98,7 +122,7 @@ search:
     - json
 ```
 
-Restart:
+Перезапуск:
 
 ```bash
 docker compose restart searxng
@@ -106,11 +130,9 @@ docker compose restart searxng
 
 ### JSON returns HTML
 
-Usually the request is reaching a reverse proxy or a different service, not the configured SearXNG API endpoint. Check port mapping and `SEARXNG_URL`.
+Обычно запрос попадает не в SearXNG API endpoint, а в reverse proxy или другой сервис. Проверь port mapping и `SEARXNG_URL`.
 
 ### Healthcheck fails
-
-Run:
 
 ```bash
 docker compose ps
@@ -120,4 +142,10 @@ curl -i 'http://127.0.0.1:8888/search?q=health&format=json'
 
 ### Limiter blocks curl or bot
 
-This example keeps `server.limiter: false`. If you enable limiter, configure Valkey and trusted proxy headers correctly.
+Этот пример держит `server.limiter: false`. Если включаешь limiter, настраивай Valkey и trusted proxy headers.
+
+## Security notes
+
+- Не публикуй SearXNG наружу без limiter/auth.
+- Для локального использования ботом достаточно binding `127.0.0.1:8888`.
+- Не добавляй реальные API keys в README или compose-файлы.
