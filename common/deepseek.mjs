@@ -2,6 +2,7 @@ import OpenAI           from 'openai';
 import logger           from './logger.mjs';
 import * as telegram    from './telegram.mjs';
 import * as telegram_db from './telegram_db.mjs';
+import {AI_TOOLS_SYSTEM_PROMPT, callAITool, getAIToolDefinitions} from './ai_tools.mjs';
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -23,8 +24,159 @@ const AI_MODEL_CHAT      = 2;
 
 const AI_CHAT_MODEL     = 'deepseek-v4-flash';
 const AI_REASONER_MODEL = 'deepseek-v4-pro';
+const MAX_AI_TOOL_ROUNDS = Number.parseInt(process.env.AI_MAX_TOOL_ROUNDS || '3', 10);
+const AI_OUTPUT_FORMAT_PROMPT = 'Отвечай обычным текстом с Markdown-разметкой Telegram. Не оборачивай обычный ответ в JSON-объект вида {"role":"assistant","content":"..."}, если пользователь прямо не попросил JSON.';
 
 export const AI_ID = 1;
+
+function isAIToolsAllowedForQuery(queryType){
+	return [IS_MESSAGE, IS_SUMMARY_MESSAGE].includes(queryType);
+}
+
+function buildSystemPrompt(systemPrompt, useTools){
+	const parts = [];
+	const prompt = String(systemPrompt || '').trim();
+
+	if(prompt){
+		parts.push(prompt);
+	}
+
+	parts.push(AI_OUTPUT_FORMAT_PROMPT);
+
+	if(useTools){
+		parts.push(AI_TOOLS_SYSTEM_PROMPT);
+	}
+
+	return parts.join('\n\n').trim();
+}
+
+function toolCallMessage(answer){
+	return {
+		role:       'assistant',
+		content:    answer?.content ?? null,
+		tool_calls: answer?.tool_calls
+	};
+}
+
+function makeDialogueContextMessage(row){
+	if(!row?.content){
+		return null;
+	}
+
+	const context = {};
+	context.role = row?.role;
+	context.name = row?.name;
+	context.message_id = row?.message_id;
+	context.reply_to = row?.reply_to;
+	context.content = row?.content;
+
+	return {
+		role:    row?.role,
+		name:    row?.name,
+		content: JSON.stringify(context, null, '')
+	};
+}
+
+function stripJsonFence(content){
+	const text = String(content || '').trim();
+	const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+	return match ? match[1].trim() : text;
+}
+
+function isChatMessageLike(value){
+	return Boolean(
+		value &&
+		typeof value === 'object' &&
+		['assistant', 'user', 'system', 'tool'].includes(value.role) &&
+		typeof value.content === 'string'
+	);
+}
+
+function normalizeAnswerContent(answer){
+	let content = typeof answer === 'string' ? answer : answer?.content;
+	if(content == null){
+		return '';
+	}
+
+	if(typeof content !== 'string'){
+		return String(content);
+	}
+
+	for(let i = 0; i < 3; i++){
+		const text = stripJsonFence(content);
+		if(!/^[\[{]/.test(text)){
+			return content;
+		}
+
+		try{
+			const parsed = JSON.parse(text);
+			if(isChatMessageLike(parsed)){
+				content = parsed.content;
+				continue;
+			}
+
+			if(Array.isArray(parsed) && parsed.length === 1 && isChatMessageLike(parsed[0])){
+				content = parsed[0].content;
+				continue;
+			}
+
+			return content;
+
+		}catch(err){
+			return content;
+		}
+	}
+
+	return content;
+}
+
+async function callToolsAndAppendMessages(messages, toolCalls){
+	for(const toolCall of toolCalls){
+		const toolName = toolCall?.function?.name;
+		const toolArgs = toolCall?.function?.arguments;
+
+		let toolResult;
+		try{
+			logger.info(`AI tool call: ${toolName}`).then();
+			toolResult = await callAITool(toolName, toolArgs);
+
+		}catch(err){
+			logger.err(err).then();
+			toolResult = {
+				error:   true,
+				message: err?.message ?? String(err)
+			};
+		}
+
+		messages.push({
+			role:         'tool',
+			tool_call_id: toolCall.id,
+			content:      JSON.stringify(toolResult, null, 2)
+		});
+	}
+}
+
+async function createCompletionWithTools(aiParams, useTools){
+	let completion;
+	let answer;
+
+	for(let round = 0; round < MAX_AI_TOOL_ROUNDS; round++){
+		completion = await openai.chat.completions.create(aiParams);
+		answer     = completion?.choices?.[0]?.message;
+
+		if(!useTools || !answer?.tool_calls?.length){
+			return {completion, answer};
+		}
+
+		aiParams.messages.push(toolCallMessage(answer));
+		await callToolsAndAppendMessages(aiParams.messages, answer.tool_calls);
+	}
+
+	completion = await openai.chat.completions.create({...aiParams, tool_choice: 'none'});
+	answer     = completion?.choices?.[0]?.message;
+
+	return {completion, answer};
+}
 
 /**
  * Отправка сообщения в DeepSeek
@@ -70,6 +222,10 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 			});
 		}
 
+		const useTools = isAIToolsAllowedForQuery(queryType);
+		const tools = useTools ? getAIToolDefinitions() : [];
+		systemPrompt = buildSystemPrompt(systemPrompt, tools.length > 0);
+
 		if(systemPrompt){
 			// Есть системный промпт. Добавляем его в запрос
 			messages = [{role: 'system', content: systemPrompt}].concat(messages);
@@ -83,6 +239,11 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 				temperature: temperature || 0.85,
 			};
 
+			if(tools.length > 0){
+				aiParams.tools       = tools;
+				aiParams.tool_choice = 'auto';
+			}
+
 			if(!!analyse){
 				aiParams.thinking         = {'type': 'enabled'};
 				aiParams.reasoning_effort = 'high';
@@ -91,8 +252,7 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 
 			logger.trace(aiParams).then();
 
-			const completion = await openai.chat.completions.create(aiParams);
-			const _answer    = completion.choices[0].message;
+			const {completion, answer: _answer} = await createCompletionWithTools(aiParams, tools.length > 0);
 
 			// Сохраняем ответ от AI
 			telegram_db.updateAIRequest(_id, completion).then();
@@ -183,7 +343,7 @@ async function sendAnswerIA(ctx, answer){
 		let mess;
 		if(answer){
 			// Отправляем ответ DeepSeek как ответ на сообщение
-			mess = await telegram.replyMessage(ctx, message?.message_id, answer?.content, true);
+			mess = await telegram.replyMessage(ctx, message?.message_id, normalizeAnswerContent(answer), true);
 			Promise.all(mess).then(mess => {
 				mess?.forEach(m => {
 					if(m?.message_id){
@@ -338,7 +498,8 @@ export const deepSeekTalks = async(ctx, analyse) => {
 
 				// Получаем историю сообщений
 				const messages = (await telegram_db.getMessagesByReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id, aiSettings))
-					?.map(el => ({role: el?.role, name: el?.name, content: JSON.stringify({role: el?.role, name: el?.name, message_id: el?.message_id, reply_to: el?.reply_to, content: el?.content}, null, '')}));
+					?.map(makeDialogueContextMessage)
+					.filter(row => !!row?.content);
 
 				console.log('messages');
 				console.log(messages);
@@ -458,4 +619,3 @@ export const deepSeekSummary = async(ctx) => {
 		}
 	}
 };
-

@@ -7,6 +7,7 @@ import * as telegram    from './common/telegram.mjs';
 import * as telegram_db from './common/telegram_db.mjs';
 import * as deepseek    from './common/deepseek.mjs';
 import {AI_ID}          from "./common/deepseek.mjs";
+import {checkAIToolsConfig} from './common/ai_tools.mjs';
 
 //-----------------------------
 
@@ -327,6 +328,9 @@ let process_users_handler;
 		await db.query('SELECT 1;');
 		logger.info('Connect to DB was been tested.').then();
 
+		logger.info('Checking AI tools config...').then();
+		await checkAIToolsConfig();
+		logger.info('AI tools config checked.').then();
 
 		logger.info('Launch bot...').then();
 		await telegram.bot.launch();

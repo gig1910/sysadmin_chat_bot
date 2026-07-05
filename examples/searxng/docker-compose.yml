@@ -1,0 +1,18 @@
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./config:/etc/searxng:rw
+      - ./cache:/var/cache/searxng:rw
+    environment:
+      - FORCE_OWNERSHIP=true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- 'http://127.0.0.1:8080/search?q=health&format=json' | grep -q '\"results\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
