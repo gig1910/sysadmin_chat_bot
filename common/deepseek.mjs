@@ -77,6 +77,57 @@ function makeDialogueContextMessage(row){
 	};
 }
 
+function normalizeTelegramQuote(quote){
+	if(!quote?.text){
+		return null;
+	}
+
+	const result = {
+		text: String(quote.text)
+	};
+
+	if(Number.isInteger(quote.position)){
+		result.position = quote.position;
+	}
+
+	if(quote.is_manual !== undefined){
+		result.is_manual = !!quote.is_manual;
+	}
+
+	if(Array.isArray(quote.entities) && quote.entities.length > 0){
+		result.entities = quote.entities;
+	}
+
+	return result;
+}
+
+function makeQuotePromptMessage(message, user){
+	const quote = normalizeTelegramQuote(message?.quote);
+	if(!quote){
+		return null;
+	}
+
+	const context = {
+		role:        'user',
+		name:        user?.username,
+		message_id:  message?.message_id,
+		reply_to:     message?.reply_to_message?.message_id,
+		quote,
+		instruction: 'Use quote.text as the primary focus of the latest user request. Use the reply chain only as context.'
+	};
+
+	const prompt = {
+		role:    'user',
+		content: JSON.stringify(context, null, '')
+	};
+
+	if(user?.username){
+		prompt.name = user.username;
+	}
+
+	return prompt;
+}
+
 function stripJsonFence(content){
 	const text = String(content || '').trim();
 	const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
@@ -500,6 +551,11 @@ export const deepSeekTalks = async(ctx, analyse) => {
 				const messages = (await telegram_db.getMessagesByReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id, aiSettings))
 					?.map(makeDialogueContextMessage)
 					.filter(row => !!row?.content);
+
+				const quotePromptMessage = makeQuotePromptMessage(message, user);
+				if(quotePromptMessage && messages){
+					messages.push(quotePromptMessage);
+				}
 
 				console.log('messages');
 				console.log(messages);

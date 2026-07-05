@@ -59,6 +59,29 @@ function normalizeEntities(message, entities = []){
 	return result.sort((a, b) => a.offset - b.offset || b.length - a.length);
 }
 
+function splitPlainMessage(message){
+	const result = [];
+	message = String(message ?? '');
+
+	while(message.length > 0){
+		const part = message.substring(0, TELEGRAM_MAX_MESSAGE_LENGTH);
+		result.push({
+			message: part,
+			entities: normalizeEntities(part, []),
+			images: []
+		});
+		message = message.substring(TELEGRAM_MAX_MESSAGE_LENGTH);
+	}
+
+	return result;
+}
+
+function parseMarkdown(message){
+	const md = MarkdownIt();
+	const env = {references: {}};
+	return md.parse(String(message ?? ''), env);
+}
+
 /**
  * Парсинг и отправка сообщения по частям, в связи с ограничением API Telegram
  * @param {String}  message
@@ -67,9 +90,13 @@ function normalizeEntities(message, entities = []){
 export const parseMessageAndSaveByParts = (message) => {
 	const result = [];
 
-	const md = MarkdownIt();
-
-	const parsed_message = md.parse(message);
+	let parsed_message;
+	try{
+		parsed_message = parseMarkdown(message);
+	}catch(err){
+		console.warn(err);
+		return splitPlainMessage(message);
+	}
 
 	let _message   = '';
 	let prefix     = '';
@@ -387,5 +414,5 @@ export const parseMessageAndSaveByParts = (message) => {
 		});
 	}
 
-	return result;
+	return result.length > 0 ? result : splitPlainMessage(message);
 };
