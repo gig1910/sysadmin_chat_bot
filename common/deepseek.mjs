@@ -58,27 +58,23 @@ function toolCallMessage(answer){
 	};
 }
 
-function normalizeOpenAIName(name){
-	name = String(name || '').trim();
-	return /^[a-zA-Z0-9_-]{1,64}$/.test(name) ? name : null;
-}
-
-function makeAIMessageFromDb(row){
+function makeDialogueContextMessage(row){
 	if(!row?.content){
 		return null;
 	}
 
-	const msg = {
-		role:    row?.role === 'assistant' ? 'assistant' : 'user',
-		content: String(row.content)
+	const context = {};
+	context.role = row?.role;
+	context.name = row?.name;
+	context.message_id = row?.message_id;
+	context.reply_to = row?.reply_to;
+	context.content = row?.content;
+
+	return {
+		role:    row?.role,
+		name:    row?.name,
+		content: JSON.stringify(context, null, '')
 	};
-
-	const name = normalizeOpenAIName(row?.name);
-	if(msg.role === 'user' && name){
-		msg.name = name;
-	}
-
-	return msg;
 }
 
 function stripJsonFence(content){
@@ -502,7 +498,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 
 				// Получаем историю сообщений
 				const messages = (await telegram_db.getMessagesByReplyLink(ctx?.botInfo?.id, chat?.id, message.message_id, aiSettings))
-					?.map(makeAIMessageFromDb)
+					?.map(makeDialogueContextMessage)
 					.filter(row => !!row?.content);
 
 				console.log('messages');
