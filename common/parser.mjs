@@ -3,6 +3,8 @@
 import MarkdownIt from 'markdown-it';
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = parseInt(process.env.TELEGRAM_MAX_MESSAGE_LENGTH, 10) || 4000;
+const TELEGRAM_TABLE_MAX_CELL_WIDTH = Math.max(12, Math.min(parseInt(process.env.TELEGRAM_TABLE_MAX_CELL_WIDTH, 10) || 32, 80));
+const TELEGRAM_TABLE_MAX_WIDTH = Math.max(40, Math.min(parseInt(process.env.TELEGRAM_TABLE_MAX_WIDTH, 10) || 100, 180));
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>()\[\]{}"']+/gim;
 
 //--------------------------------------------
@@ -82,6 +84,161 @@ function parseMarkdown(message){
 	return md.parse(String(message ?? ''), env);
 }
 
+function normalizeTableCell(text){
+	return String(text ?? '')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+function inlineTokenToText(token){
+	if(!token){
+		return '';
+	}
+
+	if(Array.isArray(token.children) && token.children.length > 0){
+		return token.children.map(inlineTokenToText).join('');
+	}
+
+	switch(token.type){
+		case 'text':
+		case 'code_inline':
+			return token.content || '';
+
+		case 'softbreak':
+		case 'hardbreak':
+			return ' ';
+
+		case 'image':
+			return token.content || token.attrs?.find(attr => attr?.[0] === 'alt')?.[1] || '';
+
+		default:
+			return token.content || '';
+	}
+}
+
+function tableWidth(widths){
+	return widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1) * 3;
+}
+
+function shrinkTableWidths(widths){
+	widths = [...widths];
+	while(tableWidth(widths) > TELEGRAM_TABLE_MAX_WIDTH){
+		let maxIndex = -1;
+		let maxWidth = 0;
+		for(let i = 0; i < widths.length; i++){
+			if(widths[i] > maxWidth){
+				maxWidth = widths[i];
+				maxIndex = i;
+			}
+		}
+
+		if(maxIndex < 0 || maxWidth <= 12){
+			break;
+		}
+
+		widths[maxIndex]--;
+	}
+	return widths;
+}
+
+function wrapTableCell(cell, width){
+	cell = normalizeTableCell(cell);
+	if(!cell){
+		return [''];
+	}
+
+	const result = [];
+	let line = '';
+
+	for(const word of cell.split(/\s+/)){
+		let rest = word;
+		while(rest.length > width){
+			if(line){
+				result.push(line);
+				line = '';
+			}
+			result.push(rest.substring(0, width));
+			rest = rest.substring(width);
+		}
+
+		if(!rest){
+			continue;
+		}
+
+		const candidate = line ? `${line} ${rest}` : rest;
+		if(candidate.length <= width){
+			line = candidate;
+		}else{
+			if(line){
+				result.push(line);
+			}
+			line = rest;
+		}
+	}
+
+	if(line){
+		result.push(line);
+	}
+
+	return result.length > 0 ? result : [''];
+}
+
+function padRight(text, width){
+	text = String(text ?? '');
+	return text + ' '.repeat(Math.max(0, width - text.length));
+}
+
+function renderTableRow(row, widths){
+	const wrapped = widths.map((width, index) => wrapTableCell(row[index] ?? '', width));
+	const maxLines = Math.max(1, ...wrapped.map(lines => lines.length));
+	const result = [];
+
+	for(let lineIndex = 0; lineIndex < maxLines; lineIndex++){
+		result.push(wrapped.map((lines, index) => padRight(lines[lineIndex] ?? '', widths[index])).join(' | ').trimEnd());
+	}
+
+	return result;
+}
+
+function renderMarkdownTable(rows){
+	rows = rows
+		.map(row => row.map(normalizeTableCell))
+		.filter(row => row.some(cell => cell.length > 0));
+
+	if(rows.length === 0){
+		return '';
+	}
+
+	const columnCount = Math.max(...rows.map(row => row.length));
+	if(columnCount <= 0){
+		return '';
+	}
+
+	rows = rows.map(row => {
+		const normalized = [...row];
+		while(normalized.length < columnCount){
+			normalized.push('');
+		}
+		return normalized;
+	});
+
+	let widths = Array.from({length: columnCount}, (_, columnIndex) => {
+		const maxCell = Math.max(...rows.map(row => normalizeTableCell(row[columnIndex]).length));
+		return Math.max(3, Math.min(maxCell, TELEGRAM_TABLE_MAX_CELL_WIDTH));
+	});
+	widths = shrinkTableWidths(widths);
+
+	const lines = [];
+	rows.forEach((row, rowIndex) => {
+		lines.push(...renderTableRow(row, widths));
+		if(rowIndex === 0 && rows.length > 1){
+			lines.push(widths.map(width => '-'.repeat(width)).join('-+-'));
+		}
+	});
+
+	return lines.join('\n');
+}
+
 /**
  * Парсинг и отправка сообщения по частям, в связи с ограничением API Telegram
  * @param {String}  message
@@ -103,7 +260,9 @@ export const parseMessageAndSaveByParts = (message) => {
 	let line_break = '';
 	let bList      = false;
 	let bTable     = false;
-	let tableCellIndex = 0;
+	let tableRows = [];
+	let tableRow = null;
+	let tableCell = null;
 	let entities   = [];
 	let images     = [];
 
@@ -124,39 +283,61 @@ export const parseMessageAndSaveByParts = (message) => {
 
 			case 'table_open':
 				bTable = true;
-				tableCellIndex = 0;
-				line_break += line_break ? '' : '\n';
+				tableRows = [];
+				tableRow = null;
+				tableCell = null;
 				break;
 
 			case 'table_close':
 				bTable = false;
-				tableCellIndex = 0;
-				line_break += '\n';
+				{
+					const tableText = renderMarkdownTable(tableRows);
+					if(tableText){
+						new_message = line_break + prefix;
+						const tableOffset = new_message.length;
+						new_message += tableText;
+						_entities.push({type: 'pre', offset: tableOffset, length: tableText.length});
+						line_break = '\n';
+						prefix = '';
+					}
+				}
+				tableRows = [];
+				tableRow = null;
+				tableCell = null;
 				break;
 
 			case 'thead_open':
 			case 'thead_close':
 			case 'tbody_open':
 			case 'tbody_close':
+				break;
+
 			case 'tr_open':
+				if(bTable){
+					tableRow = [];
+				}
 				break;
 
 			case 'tr_close':
-				tableCellIndex = 0;
-				line_break += '\n';
+				if(bTable && tableRow?.length){
+					tableRows.push(tableRow);
+				}
+				tableRow = null;
 				break;
 
 			case 'th_open':
 			case 'td_open':
 				if(bTable){
-					prefix += tableCellIndex > 0 ? ' | ' : line_break;
-					line_break = '';
-					tableCellIndex++;
+					tableCell = '';
 				}
 				break;
 
 			case 'th_close':
 			case 'td_close':
+				if(bTable && tableRow){
+					tableRow.push(tableCell ?? '');
+				}
+				tableCell = null;
 				break;
 
 			case 'paragraph_close':
@@ -202,6 +383,11 @@ export const parseMessageAndSaveByParts = (message) => {
 
 			// Общий текст. Надо учесть предыдущий перевод строки и префиксы
 			case 'inline':
+				if(bTable){
+					tableCell = `${tableCell ?? ''}${inlineTokenToText(el)}`;
+					break;
+				}
+
 				if(el.children && el.children.length){
 					let _new_message = '';
 					const __entities = [];
