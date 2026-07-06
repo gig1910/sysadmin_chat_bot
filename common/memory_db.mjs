@@ -569,12 +569,13 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
 }
 
 /**
- * Получение памяти пользователя для текущего chat-user. Только для личного чата.
+ * Получение памяти пользователя для текущего chat-user.
+ * Доступно в любом чате, если память включена для текущего chat-user.
  * @param {CTX} ctx
  * @returns {Promise<Object>}
  */
 export async function getUserMemory(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
+	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
 /**
