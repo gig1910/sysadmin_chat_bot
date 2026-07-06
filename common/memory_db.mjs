@@ -569,12 +569,21 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
 }
 
 /**
- * Получение памяти пользователя для текущего chat-user.
- * Доступно в любом чате, если память включена для текущего chat-user.
+ * Получение памяти пользователя для текущего chat-user. Только для личного чата.
  * @param {CTX} ctx
  * @returns {Promise<Object>}
  */
 export async function getUserMemory(ctx){
+	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
+}
+
+/**
+ * Внутреннее получение памяти пользователя без требования личного чата.
+ * Используется системными функциями накопления chat-user памяти.
+ * @param {CTX} ctx
+ * @returns {Promise<Object>}
+ */
+async function getUserMemoryForUpdate(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
@@ -634,24 +643,37 @@ function normalizeMemoryItems(args){
 }
 
 /**
- * Сохранение записей памяти пользователя. Только для личного чата.
+ * Сохранение записей памяти пользователя.
+ * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
  * @param {CTX} ctx
  * @param {Object|Object[]} args
  * @returns {Promise<Object>}
  */
 export async function setUserMemory(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'set_user_memory', true, true);
+	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'set_user_memory', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
 
-	const current = await getUserMemory(ctx);
+	if(args?.chat_id || args?.user_id){
+		logger.warn(`setUserMemory: явный chat_id/user_id запрещён. chat_id=${args?.chat_id}; user_id=${args?.user_id}`).then();
+		return {ok: false, error: 'explicit_identity_forbidden'};
+	}
+
+	const current = await getUserMemoryForUpdate(ctx);
 	if(current.enabled !== true){
 		return {ok: false, error: current.reason || 'memory_unavailable'};
 	}
 
+	let items;
+	try{
+		items = normalizeMemoryItems(args);
+	}catch(err){
+		logger.warn(err).then();
+		return {ok: false, error: 'invalid_memory_item'};
+	}
+
 	const data = current.data || defaultMemoryData();
-	const items = normalizeMemoryItems(args);
 	data.items = Array.isArray(data.items) ? data.items : [];
 	data.items = data.items.concat(items);
 	data.updated_at = new Date().toISOString();
