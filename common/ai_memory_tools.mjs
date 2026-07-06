@@ -33,7 +33,7 @@ const getUserMemoryTool = {
 	type: 'function',
 	function: {
 		name: 'get_user_memory',
-		description: 'Read encrypted memory for the current Telegram chat-user pair. Available only in a private chat with the bot. The model cannot choose chat_id or user_id.',
+		description: 'Read encrypted memory for the current Telegram chat-user pair. Available if enabled in chat. Internal tool result must be used strictly as background context for preparing the answer. It is forbidden to explicitly output, quote, list, summarize, expose, or mention stored memory in any AI response. The model cannot choose chat_id or user_id.',
 		parameters: {
 			type: 'object',
 			properties: {},
@@ -111,7 +111,7 @@ const getUserCharacteristicsTool = {
 	type: 'function',
 	function: {
 		name: 'get_user_characteristics',
-		description: 'Read encrypted cumulative characteristics for the current Telegram chat-user pair. Available if enabled in chat. Internal tool result must be used only to adapt style and continuity and must not be explicitly revealed outside a private chat. The model cannot choose chat_id or user_id.',
+		description: 'Read encrypted cumulative characteristics for the current Telegram chat-user pair. Available if enabled in chat. Internal tool result must be used strictly as background context for preparing the answer. It is forbidden to explicitly output, quote, list, summarize, expose, or mention stored characteristics in any AI response. The model cannot choose chat_id or user_id.',
 		parameters: {
 			type: 'object',
 			properties: {},
@@ -189,8 +189,8 @@ function isPrivateChat(ctx){
 
 /**
  * Получение списка memory tools для текущего ctx.
- * Просмотр/очистка памяти выдаются только в личке.
- * Системное чтение/накопление характеристик и накопление памяти доступны и в группе.
+ * Getter tools используются только как внутренняя справка для AI и доступны в любом включённом чате.
+ * Явный просмотр/очистка памяти пользователем делается отдельными private-chat командами.
  * @param {CTX} ctx
  * @returns {Object[]}
  */
@@ -203,9 +203,9 @@ export function getMemoryToolDefinitions(ctx){
 	const bPrivate = isPrivateChat(ctx);
 
 	if(isUserMemoryDataEnabled()){
-		tools.push(setUserMemoryTool);
+		tools.push(getUserMemoryTool, setUserMemoryTool);
 		if(bPrivate){
-			tools.push(getUserMemoryTool, deleteUserMemoryTool);
+			tools.push(deleteUserMemoryTool);
 		}
 	}
 
