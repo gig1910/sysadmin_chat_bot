@@ -6,6 +6,7 @@ import {AI_TOOLS_SYSTEM_PROMPT, callAITool, getAIToolDefinitions} from './ai_too
 import {callMemoryTool, getMemoryToolDefinitions, isMemoryToolName} from './ai_memory_tools.mjs';
 import {getPrivateContextMessages} from './memory_db.mjs';
 import {sanitizeAIMessages, sanitizeAIParams, sanitizeAIResponse, stripPrivateContextFields} from './private_context_sanitizer.mjs';
+import {json2string} from './utils.mjs';
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 
@@ -108,7 +109,7 @@ function makeDialogueContextMessage(row){
 	return {
 		role:    row?.role,
 		name:    row?.name,
-		content: JSON.stringify(context, null, '')
+		content: json2string(context)
 	};
 }
 
@@ -164,7 +165,7 @@ function makeQuotePromptMessage(message, user){
 
 	const prompt = {
 		role:    'user',
-		content: JSON.stringify(context, null, '')
+		content: json2string(context)
 	};
 
 	if(user?.username){
@@ -276,10 +277,10 @@ function parseToolArguments(rawArgs, toolName){
  */
 function stringifyToolResult(result){
 	try{
-		return JSON.stringify(sanitizeAIResponse(result), null, 2);
+		return json2string(sanitizeAIResponse(result), 2);
 	}catch(err){
 		logger.warn(`Не удалось сериализовать результат AI tool: ${err?.message ?? err}`).then();
-		return JSON.stringify({error: true, message: 'tool_result_serialization_failed'});
+		return json2string({error: true, message: 'tool_result_serialization_failed'});
 	}
 }
 
@@ -789,7 +790,7 @@ export const deepSeekSummary = async(ctx) => {
 							AI_ID,
 							[{
 								role:    'user',
-								content: `Проанализируй этот JSON-массив сообщений:\n\n${JSON.stringify(messages, null, 2)}\n\n${add_query ? `Ответь на запрос ${add_query}` : ''}`
+								content: `Проанализируй этот JSON-массив сообщений:\n\n${json2string(messages, 2)}\n\n${add_query ? `Ответь на запрос ${add_query}` : ''}`
 							}],
 							chat?.id,
 							true,
