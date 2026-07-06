@@ -3,28 +3,50 @@ import * as logger   from './logger.mjs';
 import * as telegram from './telegram.mjs';
 import {hasLikelySecret, redactSecrets} from './private_context_sanitizer.mjs';
 
-const AI_MEMORY_ENABLED                  = process.env.AI_MEMORY_ENABLED === 'true';
-const AI_MEMORY_MASTER_KEY               = process.env.AI_MEMORY_MASTER_KEY || '';
-const AI_MEMORY_MASTER_KEY_CONFIGURED    = AI_MEMORY_MASTER_KEY.trim().length > 0;
-const AI_USER_MEMORY_ENABLED             = AI_MEMORY_ENABLED && (process.env.AI_USER_MEMORY_ENABLED ?? 'true') === 'true';
-const AI_USER_CHARACTERISTICS_ENABLED    = AI_MEMORY_ENABLED && (process.env.AI_USER_CHARACTERISTICS_ENABLED ?? 'true') === 'true';
-const USER_MEMORY_ENABLED                = AI_USER_MEMORY_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
-const USER_CHARACTERISTICS_ENABLED       = AI_USER_CHARACTERISTICS_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
-const USER_MEMORY_DISABLED_REASON        = !AI_MEMORY_ENABLED ? 'memory_disabled' : (!AI_USER_MEMORY_ENABLED ? 'user_memory_disabled' : (!AI_MEMORY_MASTER_KEY_CONFIGURED ? 'encryption_key_not_configured' : null));
+const AI_MEMORY_ENABLED                    = process.env.AI_MEMORY_ENABLED === 'true';
+const AI_MEMORY_MASTER_KEY                 = process.env.AI_MEMORY_MASTER_KEY || '';
+const AI_MEMORY_MASTER_KEY_CONFIGURED      = AI_MEMORY_MASTER_KEY.trim().length > 0;
+const AI_USER_MEMORY_ENABLED               = AI_MEMORY_ENABLED && (process.env.AI_USER_MEMORY_ENABLED ?? 'true') === 'true';
+const AI_USER_CHARACTERISTICS_ENABLED      = AI_MEMORY_ENABLED && (process.env.AI_USER_CHARACTERISTICS_ENABLED ?? 'true') === 'true';
+const USER_MEMORY_ENABLED                  = AI_USER_MEMORY_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
+const USER_CHARACTERISTICS_ENABLED         = AI_USER_CHARACTERISTICS_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
+const USER_MEMORY_DISABLED_REASON          = !AI_MEMORY_ENABLED ? 'memory_disabled' : (!AI_USER_MEMORY_ENABLED ? 'user_memory_disabled' : (!AI_MEMORY_MASTER_KEY_CONFIGURED ? 'encryption_key_not_configured' : null));
 const USER_CHARACTERISTICS_DISABLED_REASON = !AI_MEMORY_ENABLED ? 'memory_disabled' : (!AI_USER_CHARACTERISTICS_ENABLED ? 'user_characteristics_disabled' : (!AI_MEMORY_MASTER_KEY_CONFIGURED ? 'encryption_key_not_configured' : null));
-const AI_MEMORY_MAX_PROMPT_CHARS         = Math.max(500, Number.parseInt(process.env.AI_MEMORY_MAX_PROMPT_CHARS || '2500', 10));
-const CONTEXT_TYPE_MEMORY                = 'user_memory';
-const CONTEXT_TYPE_CHARACTERISTICS       = 'user_characteristics';
-const DANGEROUS_JSON_KEYS                = new Set(['__proto__', 'prototype', 'constructor']);
-const MAX_MERGE_DEPTH                    = 16;
+const AI_MEMORY_AI_ID                      = Number.parseInt(process.env.AI_MEMORY_AI_ID || '1', 10) || 1;
+const AI_MEMORY_MAX_PROMPT_CHARS           = Math.max(500, Number.parseInt(process.env.AI_MEMORY_MAX_PROMPT_CHARS || '2500', 10));
+const CONTEXT_TYPE_MEMORY                  = 'user_memory';
+const CONTEXT_TYPE_CHARACTERISTICS         = 'user_characteristics';
+const SETTING_USER_MEMORY_ENABLED          = 'USER_MEMORY_ENABLED';
+const SETTING_USER_CHARACTERISTICS_ENABLED = 'USER_CHARACTERISTICS_ENABLED';
+const DANGEROUS_JSON_KEYS                  = new Set(['__proto__', 'prototype', 'constructor']);
+const MAX_MERGE_DEPTH                      = 16;
 
 /**
  * Сериализация объекта в строку JSON для передачи в PostgreSQL.
+ * Защищает от циклических ссылок, BigInt, function и symbol.
  * @param {*} value
  * @returns {String}
  */
 function json2string(value){
-	return JSON.stringify(value ?? {}, null, '');
+	const seen = new WeakSet();
+	return JSON.stringify(value ?? {}, (key, child) => {
+		if(typeof child === 'bigint'){
+			return child.toString();
+		}
+
+		if(typeof child === 'function' || typeof child === 'symbol'){
+			return undefined;
+		}
+
+		if(child && typeof child === 'object'){
+			if(seen.has(child)){
+				return '[Circular]';
+			}
+			seen.add(child);
+		}
+
+		return child;
+	}, '');
 }
 
 /**
@@ -33,16 +55,12 @@ function json2string(value){
  * @returns {Boolean}
  */
 function isPlainObject(value){
-	return !!value && typeof value === 'object' && !Array.isArray(value);
-}
+	if(!value || typeof value !== 'object' || Array.isArray(value)){
+		return false;
+	}
 
-/**
- * Проверка доступности подсистемы приватного контекста.
- * Оставлено старое имя для совместимости с ai_memory_tools.mjs.
- * @returns {Boolean}
- */
-export function isUserMemoryEnabled(){
-	return USER_MEMORY_ENABLED || USER_CHARACTERISTICS_ENABLED;
+	const proto = Object.getPrototypeOf(value);
+	return proto === Object.prototype || proto === null;
 }
 
 /**
@@ -62,17 +80,29 @@ export function isUserCharacteristicsEnabled(){
 }
 
 /**
+ * Проверка доступности хотя бы одной подсистемы приватного контекста.
+ * @returns {Boolean}
+ */
+export function isPrivateContextEnabled(){
+	return USER_MEMORY_ENABLED || USER_CHARACTERISTICS_ENABLED;
+}
+
+/**
  * Получение chat/user из текущего Telegram ctx.
  * @param {CTX} ctx
- * @returns {{chat_id: Number, user_id: Number, chat_type: String, username: ?String}}
+ * @param {Boolean} [bWarn=true]
+ * @returns {?{chat_id: Number, user_id: Number, chat_type: String, username: ?String}}
  */
-function getContextIdentity(ctx){
+function getContextIdentity(ctx, bWarn = true){
 	const message = telegram.getCtxMessage(ctx);
 	const chat    = telegram.getChatFromCtx(ctx) || message?.chat;
 	const user    = telegram.getUserFromCtx(ctx) || message?.from;
 
 	if(!chat?.id || !user?.id){
-		throw new Error('Не удалось определить текущий chat-user для приватной памяти.');
+		if(bWarn){
+			logger.warn('Не удалось определить текущий chat-user для приватной памяти.').then();
+		}
+		return null;
 	}
 
 	return {
@@ -85,7 +115,7 @@ function getContextIdentity(ctx){
 
 /**
  * Проверка, что текущий вызов идёт из личного чата с ботом.
- * @param {{chat_id: Number, user_id: Number, chat_type: String}} identity
+ * @param {?{chat_id: Number, user_id: Number, chat_type: String}} identity
  * @param {String} operation
  * @param {Boolean} [bWarn=true]
  * @returns {Boolean}
@@ -123,6 +153,11 @@ function getGlobalContextState(context_type){
  * @returns {Promise<Boolean>}
  */
 async function checkUserChatExists(chat_id, user_id){
+	if(!chat_id || !user_id){
+		logger.warn(`Нельзя работать с памятью: пустой chat_id/user_id. chat_id=${chat_id}; user_id=${user_id}`).then();
+		return false;
+	}
+
 	const res = await db.query(
 		`SELECT EXISTS(SELECT 1 FROM CHATS WHERE ID = $1::BIGINT) AS CHAT_EXISTS,
                 EXISTS(SELECT 1 FROM USERS WHERE ID = $2::BIGINT) AS USER_EXISTS;`,
@@ -144,32 +179,61 @@ async function checkUserChatExists(chat_id, user_id){
 }
 
 /**
- * Получение опциональных per-chat флагов из CHATS.
- * Колонки могут отсутствовать: тогда через TO_JSONB(C) будет использовано значение TRUE.
+ * Строгое чтение boolean-настройки из AI2CHAT_SETTINGS.
+ * @param {?String} value
+ * @param {Boolean} default_value
+ * @param {String} type
+ * @param {Number} chat_id
+ * @returns {Boolean}
+ */
+function parseBoolSetting(value, default_value, type, chat_id){
+	if(value == null){
+		return default_value;
+	}
+
+	const normalized = String(value).trim().toLowerCase();
+	if(normalized === 'true'){
+		return true;
+	}
+
+	if(normalized === 'false'){
+		return false;
+	}
+
+	logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${type}; value=${value}`).then();
+	return false;
+}
+
+/**
+ * Получение per-chat флагов приватного контекста из AI2CHAT_SETTINGS.
+ * Отсутствующая настройка трактуется как TRUE, некорректное значение — как FALSE.
  * @param {Number} chat_id
  * @returns {Promise<{user_memory_enabled: Boolean, user_characteristics_enabled: Boolean}>}
  */
 async function getChatPrivateContextSettings(chat_id){
 	const res = await db.query(
-		`SELECT COALESCE((TO_JSONB(C) ->> 'user_memory_enabled')::BOOL, TRUE)          AS USER_MEMORY_ENABLED,
-                COALESCE((TO_JSONB(C) ->> 'user_characteristics_enabled')::BOOL, TRUE) AS USER_CHARACTERISTICS_ENABLED
-         FROM CHATS C
-         WHERE C.ID = $1::BIGINT;`,
-		[chat_id]
+		`SELECT TYPE, VALUE
+         FROM AI2CHAT_SETTINGS
+         WHERE CHAT_ID = $1::BIGINT
+           AND AI_ID = $2::INT
+           AND REASONER_MODE IS FALSE
+           AND TYPE IN ($3::TEXT, $4::TEXT);`,
+		[chat_id, AI_MEMORY_AI_ID, SETTING_USER_MEMORY_ENABLED, SETTING_USER_CHARACTERISTICS_ENABLED]
 	);
 
 	if(!res){
-		logger.warn(`Не удалось прочитать настройки приватной памяти чата. chat_id=${chat_id}`).then();
+		logger.warn(`Не удалось прочитать AI2CHAT_SETTINGS для приватной памяти. chat_id=${chat_id}`).then();
 		return {
 			user_memory_enabled: false,
 			user_characteristics_enabled: false
 		};
 	}
 
-	const row = res?.rows?.[0] || {};
+	const settings = {};
+	res.rows?.forEach(row => settings[row.type] = row.value);
 	return {
-		user_memory_enabled: row.user_memory_enabled === true,
-		user_characteristics_enabled: row.user_characteristics_enabled === true
+		user_memory_enabled: parseBoolSetting(settings[SETTING_USER_MEMORY_ENABLED], true, SETTING_USER_MEMORY_ENABLED, chat_id),
+		user_characteristics_enabled: parseBoolSetting(settings[SETTING_USER_CHARACTERISTICS_ENABLED], true, SETTING_USER_CHARACTERISTICS_ENABLED, chat_id)
 	};
 }
 
@@ -191,7 +255,11 @@ async function checkPrivateContextAccess(ctx, context_type, operation, bRequireP
 		return {enabled: false, reason: global_state.reason, identity: null};
 	}
 
-	const identity = getContextIdentity(ctx);
+	const identity = getContextIdentity(ctx, bWarn);
+	if(!identity?.chat_id || !identity?.user_id){
+		return {enabled: false, reason: 'context_identity_not_found', identity};
+	}
+
 	if(bRequirePrivate && !checkPrivateChat(identity, operation, bWarn)){
 		return {enabled: false, reason: 'private_chat_required', identity};
 	}
@@ -262,11 +330,14 @@ function defaultCharacteristicsData(){
  * Проверка расшифрованного JSON.
  * @param {*} data
  * @param {String} context_type
- * @returns {Object}
+ * @param {Number} chat_id
+ * @param {Number} user_id
+ * @returns {?Object}
  */
-function checkDecryptedData(data, context_type){
+function checkDecryptedData(data, context_type, chat_id, user_id){
 	if(!isPlainObject(data)){
-		throw new Error(`Ошибка расшифровки ${context_type}: на выходе не JSON-объект.`);
+		logger.warn(`Ошибка расшифровки ${context_type}: на выходе не JSON-объект. chat_id=${chat_id}; user_id=${user_id}`).then();
+		return null;
 	}
 	return data;
 }
@@ -305,7 +376,11 @@ async function readUserMemoryRow(chat_id, user_id){
 
 	const row = res?.rows?.[0] || null;
 	if(row?.enabled === true){
-		row.data = checkDecryptedData(row.data, CONTEXT_TYPE_MEMORY);
+		row.data = checkDecryptedData(row.data, CONTEXT_TYPE_MEMORY, chat_id, user_id);
+		if(!row.data){
+			row.enabled = false;
+			row.reason = 'decrypt_error';
+		}
 	}
 	return row;
 }
@@ -344,7 +419,11 @@ async function readUserCharacteristicsRow(chat_id, user_id){
 
 	const row = res?.rows?.[0] || null;
 	if(row?.enabled === true){
-		row.data = checkDecryptedData(row.data, CONTEXT_TYPE_CHARACTERISTICS);
+		row.data = checkDecryptedData(row.data, CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id);
+		if(!row.data){
+			row.enabled = false;
+			row.reason = 'decrypt_error';
+		}
 	}
 	return row;
 }
@@ -358,7 +437,8 @@ async function readUserCharacteristicsRow(chat_id, user_id){
  */
 async function upsertUserMemoryRow(chat_id, user_id, data){
 	if(!isPlainObject(data)){
-		throw new Error('Нельзя сохранить USER_MEMORY: data не является JSON-объектом.');
+		logger.warn('Нельзя сохранить USER_MEMORY: data не является JSON-объектом.').then();
+		return null;
 	}
 
 	if(!await checkStorageReady(CONTEXT_TYPE_MEMORY, chat_id, user_id)){
@@ -396,7 +476,8 @@ async function upsertUserMemoryRow(chat_id, user_id, data){
  */
 async function upsertUserCharacteristicsRow(chat_id, user_id, data){
 	if(!isPlainObject(data)){
-		throw new Error('Нельзя сохранить USER_CHARACTERISTICS: data не является JSON-объектом.');
+		logger.warn('Нельзя сохранить USER_CHARACTERISTICS: data не является JSON-объектом.').then();
+		return null;
 	}
 
 	if(!await checkStorageReady(CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
@@ -431,29 +512,34 @@ async function upsertUserCharacteristicsRow(chat_id, user_id, data){
  * @param {String} context_type
  * @param {Function} readRowFunc
  * @param {Function} defaultFactory
- * @returns {Promise<{enabled: Boolean, data: Object, reason: ?String, updated_at: *, version: ?Number}>}
+ * @param {Boolean} [bRequirePrivate=true]
+ * @returns {Promise<{enabled: Boolean, data: ?Object, reason: ?String, updated_at: *, version: ?Number}>}
  */
-async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory){
+async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bRequirePrivate = true){
 	if(typeof readRowFunc !== 'function'){
-		throw new Error('getPrivateData: readRowFunc не является функцией.');
+		logger.warn('getPrivateData: readRowFunc не является функцией.').then();
+		return {enabled: false, data: null, reason: 'invalid_read_function'};
 	}
 
 	if(typeof defaultFactory !== 'function'){
-		throw new Error('getPrivateData: defaultFactory не является функцией.');
+		logger.warn('getPrivateData: defaultFactory не является функцией.').then();
+		return {enabled: false, data: null, reason: 'invalid_default_factory'};
 	}
 
-	const access = await checkPrivateContextAccess(ctx, context_type, 'read_private_data', true, true);
+	const access = await checkPrivateContextAccess(ctx, context_type, 'read_private_data', bRequirePrivate, true);
 	if(access.enabled !== true){
-		return {
-			enabled: false,
-			data: defaultFactory(),
-			reason: access.reason
-		};
+		return {enabled: false, data: null, reason: access.reason};
+	}
+
+	if(!access.identity?.chat_id || !access.identity?.user_id){
+		logger.warn(`getPrivateData: невалидный identity. context_type=${context_type}`).then();
+		return {enabled: false, data: null, reason: 'invalid_identity'};
 	}
 
 	const default_data = defaultFactory();
 	if(!isPlainObject(default_data)){
-		throw new Error('getPrivateData: defaultFactory вернул не JSON-объект.');
+		logger.warn('getPrivateData: defaultFactory вернул не JSON-объект.').then();
+		return {enabled: false, data: null, reason: 'invalid_default_data'};
 	}
 
 	const row = await readRowFunc(access.identity.chat_id, access.identity.user_id);
@@ -468,8 +554,8 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory){
 	if(row.enabled !== true){
 		return {
 			enabled: false,
-			data: default_data,
-			reason: 'disabled_for_user_chat',
+			data: null,
+			reason: row.reason || 'disabled_for_user_chat',
 			updated_at: row.updated_at
 		};
 	}
@@ -483,21 +569,30 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory){
 }
 
 /**
- * Получение памяти пользователя для текущего chat-user.
+ * Получение памяти пользователя для текущего chat-user. Только для личного чата.
  * @param {CTX} ctx
  * @returns {Promise<Object>}
  */
 export async function getUserMemory(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData);
+	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
 }
 
 /**
- * Получение кумулятивных характеристик пользователя для текущего chat-user.
+ * Получение кумулятивных характеристик пользователя для текущего chat-user. Только для личного чата.
  * @param {CTX} ctx
  * @returns {Promise<Object>}
  */
 export async function getUserCharacteristics(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData);
+	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, true);
+}
+
+/**
+ * Внутреннее получение характеристик пользователя без требования личного чата.
+ * @param {CTX} ctx
+ * @returns {Promise<Object>}
+ */
+async function getUserCharacteristicsForUpdate(ctx){
+	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
 }
 
 /**
@@ -513,7 +608,7 @@ function normalizeMemoryItem(args){
 		throw new Error('Нельзя сохранить пустую запись памяти.');
 	}
 
-	if(hasLikelySecret(text) || hasLikelySecret(JSON.stringify(data))){
+	if(hasLikelySecret(text) || hasLikelySecret(json2string(data))){
 		throw new Error('Отказ от сохранения: данные похожи на секрет, токен, пароль или ключ.');
 	}
 
@@ -538,7 +633,7 @@ function normalizeMemoryItems(args){
 }
 
 /**
- * Сохранение записей памяти пользователя.
+ * Сохранение записей памяти пользователя. Только для личного чата.
  * @param {CTX} ctx
  * @param {Object|Object[]} args
  * @returns {Promise<Object>}
@@ -605,32 +700,46 @@ function deepMerge(target, patch, seen = new WeakSet(), depth = 0){
 
 /**
  * Обновление кумулятивных характеристик пользователя.
+ * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
  * @param {CTX} ctx
  * @param {Object} args
  * @returns {Promise<Object>}
  */
 export async function patchUserCharacteristics(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'patch_user_characteristics', true, true);
+	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'patch_user_characteristics', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
 
+	if(args?.chat_id || args?.user_id){
+		logger.warn(`patchUserCharacteristics: явный chat_id/user_id запрещён. chat_id=${args?.chat_id}; user_id=${args?.user_id}`).then();
+		return {ok: false, error: 'explicit_identity_forbidden'};
+	}
+
 	const patch = args?.patch && typeof args.patch === 'object' && !Array.isArray(args.patch) ? args.patch : null;
 	if(!patch || Object.keys(patch).length === 0){
-		throw new Error('Пустой patch характеристик пользователя.');
+		return {ok: false, error: 'empty_patch'};
 	}
 
-	if(hasLikelySecret(JSON.stringify(patch))){
-		throw new Error('Отказ от сохранения характеристик: данные похожи на секрет.');
+	if(hasLikelySecret(json2string(patch))){
+		return {ok: false, error: 'secret_like_data'};
 	}
 
-	const current = await getUserCharacteristics(ctx);
+	const current = await getUserCharacteristicsForUpdate(ctx);
 	if(current.enabled !== true){
 		return {ok: false, error: current.reason || 'characteristics_unavailable'};
 	}
 
+	let profile;
+	try{
+		profile = deepMerge(current.data?.profile || {}, patch);
+	}catch(err){
+		logger.warn(err).then();
+		return {ok: false, error: 'invalid_patch'};
+	}
+
 	const data = current.data || defaultCharacteristicsData();
-	data.profile = deepMerge(data.profile || {}, patch);
+	data.profile = profile;
 	data.observations = Array.isArray(data.observations) ? data.observations : [];
 	data.observations.push({
 		evidence: String(args?.evidence || '').slice(0, 1000),
@@ -641,6 +750,56 @@ export async function patchUserCharacteristics(ctx, args){
 
 	await upsertUserCharacteristicsRow(access.identity.chat_id, access.identity.user_id, data);
 	return {ok: true, patched: true};
+}
+
+/**
+ * Полный пересчёт характеристик пользователя.
+ * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
+ * @param {CTX} ctx
+ * @param {Object} args
+ * @returns {Promise<Object>}
+ */
+export async function recalculateUserCharacteristics(ctx, args){
+	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'recalculate_user_characteristics', false, true);
+	if(access.enabled !== true){
+		return {ok: false, error: access.reason};
+	}
+
+	if(args?.chat_id || args?.user_id){
+		logger.warn(`recalculateUserCharacteristics: явный chat_id/user_id запрещён. chat_id=${args?.chat_id}; user_id=${args?.user_id}`).then();
+		return {ok: false, error: 'explicit_identity_forbidden'};
+	}
+
+	const profile = args?.profile && isPlainObject(args.profile) ? args.profile : null;
+	if(!profile || Object.keys(profile).length === 0){
+		return {ok: false, error: 'empty_profile'};
+	}
+
+	if(hasLikelySecret(json2string(profile))){
+		return {ok: false, error: 'secret_like_data'};
+	}
+
+	let safe_profile;
+	try{
+		safe_profile = deepMerge({}, profile);
+	}catch(err){
+		logger.warn(err).then();
+		return {ok: false, error: 'invalid_profile'};
+	}
+
+	const observations = Array.isArray(args?.observations) ? args.observations.slice(0, 50) : [];
+	const data = {
+		profile: safe_profile,
+		observations: observations.map(observation => ({
+			evidence: String(observation?.evidence || '').slice(0, 1000),
+			confidence: Number.isFinite(Number(observation?.confidence)) ? Math.max(0, Math.min(1, Number(observation.confidence))) : 0.6,
+			updated_at: new Date().toISOString()
+		})),
+		updated_at: new Date().toISOString()
+	};
+
+	await upsertUserCharacteristicsRow(access.identity.chat_id, access.identity.user_id, data);
+	return {ok: true, recalculated: true};
 }
 
 /**
@@ -660,7 +819,7 @@ export async function deleteUserMemory(ctx){
 
 /**
  * Постановка пересчёта характеристик в очередь.
- * Прямой вызов пока запрещён, чтобы эту операцию нельзя было вызвать tool-ом явно.
+ * Только внутренний вызов. Может работать из группы, но только для текущего ctx.from/ctx.chat.
  * @param {CTX} ctx
  * @param {Object} [args]
  * @param {Boolean} [bInternal=false]
@@ -668,12 +827,12 @@ export async function deleteUserMemory(ctx){
  */
 export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal = false){
 	if(bInternal !== true){
-		const identity = getContextIdentity(ctx);
-		logger.warn(`Прямой вызов queueUserCharacteristicsRecalc заблокирован. chat_id=${identity.chat_id}; user_id=${identity.user_id}`).then();
+		const identity = getContextIdentity(ctx, false);
+		logger.warn(`Прямой вызов queueUserCharacteristicsRecalc заблокирован. chat_id=${identity?.chat_id}; user_id=${identity?.user_id}`).then();
 		return {ok: false, error: 'direct_call_forbidden'};
 	}
 
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'queue_user_characteristics_recalc', true, true);
+	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'queue_user_characteristics_recalc', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -699,15 +858,8 @@ export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal =
  * @returns {Promise<Object[]>}
  */
 export async function getPrivateContextMessages(ctx){
-	let identity;
-	try{
-		identity = getContextIdentity(ctx);
-	}catch(err){
-		logger.warn(err).then();
-		return [];
-	}
-
-	if(!checkPrivateChat(identity, 'get_private_context_messages', false)){
+	const identity = getContextIdentity(ctx, false);
+	if(!identity || !checkPrivateChat(identity, 'get_private_context_messages', false)){
 		return [];
 	}
 
@@ -728,7 +880,7 @@ export async function getPrivateContextMessages(ctx){
 		payload.characteristics = characteristics.data;
 	}
 
-	const payload_text = JSON.stringify(payload, null, 2).slice(0, AI_MEMORY_MAX_PROMPT_CHARS);
+	const payload_text = json2string(payload).slice(0, AI_MEMORY_MAX_PROMPT_CHARS);
 	if(!payload_text || payload_text === '{}'){
 		return [];
 	}
