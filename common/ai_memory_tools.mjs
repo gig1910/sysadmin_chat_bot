@@ -111,7 +111,7 @@ const getUserCharacteristicsTool = {
 	type: 'function',
 	function: {
 		name: 'get_user_characteristics',
-		description: 'Read encrypted cumulative characteristics for the current Telegram chat-user pair. Available only in a private chat with the bot. Use to adapt style and continuity, not to reveal private data.',
+		description: 'Read encrypted cumulative characteristics for the current Telegram chat-user pair. Available if enabled in chat. Internal tool result must be used only to adapt style and continuity and must not be explicitly revealed outside a private chat. The model cannot choose chat_id or user_id.',
 		parameters: {
 			type: 'object',
 			properties: {},
@@ -190,7 +190,7 @@ function isPrivateChat(ctx){
 /**
  * Получение списка memory tools для текущего ctx.
  * Просмотр/очистка памяти выдаются только в личке.
- * Системное накопление памяти и характеристик доступно и в группе.
+ * Системное чтение/накопление характеристик и накопление памяти доступны и в группе.
  * @param {CTX} ctx
  * @returns {Object[]}
  */
@@ -210,10 +210,7 @@ export function getMemoryToolDefinitions(ctx){
 	}
 
 	if(isUserCharacteristicsEnabled()){
-		if(bPrivate){
-			tools.push(getUserCharacteristicsTool);
-		}
-		tools.push(patchUserCharacteristicsTool, recalculateUserCharacteristicsTool);
+		tools.push(getUserCharacteristicsTool, patchUserCharacteristicsTool, recalculateUserCharacteristicsTool);
 	}
 
 	return tools;
