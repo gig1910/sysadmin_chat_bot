@@ -1,33 +1,8 @@
 import * as db       from './db.mjs';
 import * as telegram from './telegram.mjs';
+import {json2string} from './utils.mjs';
 
 //-----------------------------------
-
-const json = (obj) => obj == null ? null : JSON.stringify(obj, null, '');
-
-const jsonSafe = (obj) => {
-	const seen = new WeakSet();
-
-	return JSON.stringify(obj, (key, value) => {
-		if(typeof value === 'bigint'){
-			return value.toString();
-		}
-
-		if(typeof value === 'function' || typeof value === 'symbol'){
-			return undefined;
-		}
-
-		if(value && typeof value === 'object'){
-			if(seen.has(value)){
-				return '[Circular]';
-			}
-
-			seen.add(value);
-		}
-
-		return value;
-	});
-};
 
 /**
  * @typedef Chat
@@ -69,7 +44,7 @@ export const addChat2DB = async chat => db.query(`
                                           JOIN_TO_SEND_MESSAGES=EXCLUDED.JOIN_TO_SEND_MESSAGES,
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           RAW=EXCLUDED.RAW;`,
-	[chat?.id, chat?.type, chat?.title, chat?.invite_link, json(chat?.permissions), chat?.join_to_send_messages, chat?.max_reaction_count, json(chat)]
+	[chat?.id, chat?.type, chat?.title, chat?.invite_link, json2string(chat?.permissions), chat?.join_to_send_messages, chat?.max_reaction_count, json2string(chat)]
 );
 
 /**
@@ -89,7 +64,7 @@ export const addUser2DB = async user => db.query(`
                                           HAS_PRIVATE_FORWARDS=EXCLUDED.HAS_PRIVATE_FORWARDS,
                                           MAX_REACTION_COUNT=EXCLUDED.MAX_REACTION_COUNT,
                                           RAW=EXCLUDED.RAW;`,
-	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, json(user)]
+	[user?.id, user?.username, user?.first_name, user?.last_name, user?.type, user?.active_usernames?.join(','), user?.bio, user?.has_private_forwards, user?.max_reaction_count, json2string(user)]
 );
 
 /**
@@ -177,7 +152,7 @@ export const addMessage2DB = async(ctx, chat, user, message) => {
             INSERT INTO MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, ($5::JSONB - 'telegram'))
             ON CONFLICT DO NOTHING;`,
-		[message?.message_id, chat?.id, user?.id, json(message), jsonSafe(ctx)]);
+		[message?.message_id, chat?.id, user?.id, json2string(message), json2string(ctx)]);
 };
 
 /**
@@ -328,7 +303,7 @@ export const setChatAISettings = async(ctx, ai_id, reasoner_mode, type, value) =
 export const insertAIRequest = async(ai_id, ai_kind, ai_model, request) => (await db.query(`
     INSERT INTO AI_REQUEST (AI_ID, AI_KIND, AI_MODEL, REQUEST)
     VALUES ($1::INT, $2::INT, $3::INT, $4::JSONB)
-    RETURNING ID;`, [ai_id, ai_kind, ai_model, jsonSafe(request)]))?.rows[0]?.id;
+    RETURNING ID;`, [ai_id, ai_kind, ai_model, json2string(request)]))?.rows[0]?.id;
 
 /**
  * Обновление данных запроса к AI
@@ -342,4 +317,4 @@ export const updateAIRequest = async(id, answer, error = null) => db.query(`
         ERROR            = $3::JSONB,
         ANSWER_TIMESTAMP = CASE WHEN $2::JSONB IS NULL THEN ANSWER_TIMESTAMP ELSE NOW() END,
         ERROR_TIMESTAMP  = CASE WHEN $3::JSONB IS NULL THEN ERROR_TIMESTAMP ELSE NOW() END
-    WHERE ID = $1::INT`, [id, jsonSafe(answer), jsonSafe(error)]);
+    WHERE ID = $1::INT`, [id, json2string(answer), json2string(error)]);
