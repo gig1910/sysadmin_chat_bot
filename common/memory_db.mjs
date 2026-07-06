@@ -1,28 +1,28 @@
 import {randomUUID} from 'node:crypto';
 
-import * as db          from './db.mjs';
-import * as logger      from './logger.mjs';
-import * as telegram    from './telegram.mjs';
-import * as telegram_db from './telegram_db.mjs';
+import * as db            from './db.mjs';
+import * as logger        from './logger.mjs';
+import * as telegram      from './telegram.mjs';
+import * as telegram_db   from './telegram_db.mjs';
+import * as memory_config from './ai_memory_config.mjs';
 import {hasLikelySecret, redactSecrets} from './private_context_sanitizer.mjs';
 import {deepMerge, isPlainObject, json2string, parseBoolSetting} from './utils.mjs';
-import * as ai_memory_tools from './ai_memory_tools.mjs';
 
 function getCharacteristicsMergeOptions(){
 	return {
-		max_depth: ai_memory_tools.MAX_MERGE_DEPTH,
-		dangerous_keys: ai_memory_tools.DANGEROUS_JSON_KEYS,
+		max_depth: memory_config.MAX_MERGE_DEPTH,
+		dangerous_keys: memory_config.DANGEROUS_JSON_KEYS,
 		on_skip_key: key => logger.warn(`Пропущен опасный ключ characteristics patch: ${key}`).then()
 	};
 }
 
 function getGlobalContextState(context_type){
 	switch(context_type){
-		case ai_memory_tools.CONTEXT_TYPE_MEMORY:
-			return {enabled: ai_memory_tools.USER_MEMORY_ENABLED, reason: ai_memory_tools.USER_MEMORY_DISABLED_REASON};
+		case memory_config.CONTEXT_TYPE_MEMORY:
+			return {enabled: memory_config.USER_MEMORY_ENABLED, reason: memory_config.USER_MEMORY_DISABLED_REASON};
 
-		case ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS:
-			return {enabled: ai_memory_tools.USER_CHARACTERISTICS_ENABLED, reason: ai_memory_tools.USER_CHARACTERISTICS_DISABLED_REASON};
+		case memory_config.CONTEXT_TYPE_CHARACTERISTICS:
+			return {enabled: memory_config.USER_CHARACTERISTICS_ENABLED, reason: memory_config.USER_CHARACTERISTICS_DISABLED_REASON};
 
 		default:
 			return {enabled: false, reason: 'unknown_context_type'};
@@ -32,21 +32,21 @@ function getGlobalContextState(context_type){
 async function getChatPrivateContextSettings(chat_id){
 	const settings = await telegram_db.getChatAISettingsMapByChatId(
 		chat_id,
-		ai_memory_tools.AI_MEMORY_AI_ID,
+		memory_config.AI_MEMORY_AI_ID,
 		false,
-		[ai_memory_tools.SETTING_USER_MEMORY_ENABLED, ai_memory_tools.SETTING_USER_CHARACTERISTICS_ENABLED]
+		[memory_config.SETTING_USER_MEMORY_ENABLED, memory_config.SETTING_USER_CHARACTERISTICS_ENABLED]
 	);
 
 	return {
 		user_memory_enabled: parseBoolSetting(
-			settings[ai_memory_tools.SETTING_USER_MEMORY_ENABLED],
+			settings[memory_config.SETTING_USER_MEMORY_ENABLED],
 			true,
-			value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${ai_memory_tools.SETTING_USER_MEMORY_ENABLED}; value=${value}`).then()
+			value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${memory_config.SETTING_USER_MEMORY_ENABLED}; value=${value}`).then()
 		),
 		user_characteristics_enabled: parseBoolSetting(
-			settings[ai_memory_tools.SETTING_USER_CHARACTERISTICS_ENABLED],
+			settings[memory_config.SETTING_USER_CHARACTERISTICS_ENABLED],
 			true,
-			value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${ai_memory_tools.SETTING_USER_CHARACTERISTICS_ENABLED}; value=${value}`).then()
+			value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${memory_config.SETTING_USER_CHARACTERISTICS_ENABLED}; value=${value}`).then()
 		)
 	};
 }
@@ -74,14 +74,14 @@ async function checkPrivateContextAccess(ctx, context_type, operation, bRequireP
 	}
 
 	const chat_settings = await getChatPrivateContextSettings(identity.chat_id);
-	if(context_type === ai_memory_tools.CONTEXT_TYPE_MEMORY && chat_settings.user_memory_enabled !== true){
+	if(context_type === memory_config.CONTEXT_TYPE_MEMORY && chat_settings.user_memory_enabled !== true){
 		if(bWarn){
 			logger.warn(`User-memory отключена для чата. chat_id=${identity.chat_id}; user_id=${identity.user_id}`).then();
 		}
 		return {enabled: false, reason: 'user_memory_disabled_for_chat', identity};
 	}
 
-	if(context_type === ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS && chat_settings.user_characteristics_enabled !== true){
+	if(context_type === memory_config.CONTEXT_TYPE_CHARACTERISTICS && chat_settings.user_characteristics_enabled !== true){
 		if(bWarn){
 			logger.warn(`User-characteristics отключены для чата. chat_id=${identity.chat_id}; user_id=${identity.user_id}`).then();
 		}
@@ -134,7 +134,7 @@ function checkDecryptedData(data, context_type, chat_id, user_id){
 }
 
 async function readUserMemoryRow(chat_id, user_id){
-	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_MEMORY, chat_id, user_id)){
+	if(!await checkStorageReady(memory_config.CONTEXT_TYPE_MEMORY, chat_id, user_id)){
 		return null;
 	}
 
@@ -151,7 +151,7 @@ async function readUserMemoryRow(chat_id, user_id){
          FROM USER_MEMORY
          WHERE CHAT_ID = $1::BIGINT
            AND USER_ID = $2::BIGINT;`,
-		[chat_id, user_id, ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_MEMORY]
+		[chat_id, user_id, memory_config.AI_MEMORY_MASTER_KEY, memory_config.CONTEXT_TYPE_MEMORY]
 	);
 
 	if(!res){
@@ -161,7 +161,7 @@ async function readUserMemoryRow(chat_id, user_id){
 
 	const row = res?.rows?.[0] || null;
 	if(row?.enabled === true){
-		row.data = checkDecryptedData(row.data, ai_memory_tools.CONTEXT_TYPE_MEMORY, chat_id, user_id);
+		row.data = checkDecryptedData(row.data, memory_config.CONTEXT_TYPE_MEMORY, chat_id, user_id);
 		if(!row.data){
 			row.enabled = false;
 			row.reason = 'decrypt_error';
@@ -171,7 +171,7 @@ async function readUserMemoryRow(chat_id, user_id){
 }
 
 async function readUserCharacteristicsRow(chat_id, user_id){
-	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
+	if(!await checkStorageReady(memory_config.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
 		return null;
 	}
 
@@ -188,7 +188,7 @@ async function readUserCharacteristicsRow(chat_id, user_id){
          FROM USER_CHARACTERISTICS
          WHERE CHAT_ID = $1::BIGINT
            AND USER_ID = $2::BIGINT;`,
-		[chat_id, user_id, ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS]
+		[chat_id, user_id, memory_config.AI_MEMORY_MASTER_KEY, memory_config.CONTEXT_TYPE_CHARACTERISTICS]
 	);
 
 	if(!res){
@@ -198,7 +198,7 @@ async function readUserCharacteristicsRow(chat_id, user_id){
 
 	const row = res?.rows?.[0] || null;
 	if(row?.enabled === true){
-		row.data = checkDecryptedData(row.data, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id);
+		row.data = checkDecryptedData(row.data, memory_config.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id);
 		if(!row.data){
 			row.enabled = false;
 			row.reason = 'decrypt_error';
@@ -213,7 +213,7 @@ async function upsertUserMemoryRow(chat_id, user_id, data){
 		return null;
 	}
 
-	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_MEMORY, chat_id, user_id)){
+	if(!await checkStorageReady(memory_config.CONTEXT_TYPE_MEMORY, chat_id, user_id)){
 		return null;
 	}
 
@@ -235,7 +235,7 @@ async function upsertUserMemoryRow(chat_id, user_id, data){
                            ENABLED = TRUE,
                            VERSION = USER_MEMORY.VERSION + 1,
                            UPDATED_AT = NOW();`,
-		[chat_id, user_id, json2string(data), ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_MEMORY]
+		[chat_id, user_id, json2string(data), memory_config.AI_MEMORY_MASTER_KEY, memory_config.CONTEXT_TYPE_MEMORY]
 	);
 }
 
@@ -245,7 +245,7 @@ async function upsertUserCharacteristicsRow(chat_id, user_id, data){
 		return null;
 	}
 
-	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
+	if(!await checkStorageReady(memory_config.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
 		return null;
 	}
 
@@ -267,7 +267,7 @@ async function upsertUserCharacteristicsRow(chat_id, user_id, data){
                            ENABLED = TRUE,
                            VERSION = USER_CHARACTERISTICS.VERSION + 1,
                            UPDATED_AT = NOW();`,
-		[chat_id, user_id, json2string(data), ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS]
+		[chat_id, user_id, json2string(data), memory_config.AI_MEMORY_MASTER_KEY, memory_config.CONTEXT_TYPE_CHARACTERISTICS]
 	);
 }
 
@@ -321,27 +321,27 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
 }
 
 export async function getUserMemory(ctx){
-	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
+	return getPrivateData(ctx, memory_config.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
 export async function getUserMemoryPrivate(ctx){
-	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
+	return getPrivateData(ctx, memory_config.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
 }
 
 async function getUserMemoryForUpdate(ctx){
-	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
+	return getPrivateData(ctx, memory_config.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
 export async function getUserCharacteristics(ctx){
-	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
+	return getPrivateData(ctx, memory_config.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
 }
 
 export async function getUserCharacteristicsPrivate(ctx){
-	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, true);
+	return getPrivateData(ctx, memory_config.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, true);
 }
 
 async function getUserCharacteristicsForUpdate(ctx){
-	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
+	return getPrivateData(ctx, memory_config.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
 }
 
 function normalizeMemoryItem(args){
@@ -391,7 +391,7 @@ function ensureMemoryItemIds(data){
 }
 
 export async function setUserMemory(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'set_user_memory', false, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_MEMORY, 'set_user_memory', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -428,7 +428,7 @@ export async function setUserMemory(ctx, args){
 }
 
 export async function listUserMemoryItemsPrivate(ctx){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'list_user_memory_items', true, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_MEMORY, 'list_user_memory_items', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason, items: []};
 	}
@@ -453,7 +453,7 @@ export async function listUserMemoryItemsPrivate(ctx){
 }
 
 export async function updateUserMemoryItemPrivate(ctx, item_id, args){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'update_user_memory_item', true, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_MEMORY, 'update_user_memory_item', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -517,7 +517,7 @@ export async function updateUserMemoryItemPrivate(ctx, item_id, args){
 }
 
 export async function deleteUserMemoryItemPrivate(ctx, item_id){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'delete_user_memory_item', true, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_MEMORY, 'delete_user_memory_item', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -550,7 +550,7 @@ export async function deleteUserMemoryItemPrivate(ctx, item_id){
 }
 
 export async function patchUserCharacteristics(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'patch_user_characteristics', false, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_CHARACTERISTICS, 'patch_user_characteristics', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -602,7 +602,7 @@ export async function patchUserCharacteristics(ctx, args){
 }
 
 export async function recalculateUserCharacteristics(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'recalculate_user_characteristics', false, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_CHARACTERISTICS, 'recalculate_user_characteristics', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -650,7 +650,7 @@ export async function recalculateUserCharacteristics(ctx, args){
 }
 
 export async function deleteUserMemory(ctx){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'delete_user_memory', true, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_MEMORY, 'delete_user_memory', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -665,7 +665,7 @@ export async function deleteUserMemory(ctx){
 }
 
 export async function deleteUserCharacteristics(ctx){
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'delete_user_characteristics', true, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_CHARACTERISTICS, 'delete_user_characteristics', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -686,7 +686,7 @@ export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal =
 		return {ok: false, error: 'direct_call_forbidden'};
 	}
 
-	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'queue_user_characteristics_recalc', false, true);
+	const access = await checkPrivateContextAccess(ctx, memory_config.CONTEXT_TYPE_CHARACTERISTICS, 'queue_user_characteristics_recalc', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -738,7 +738,7 @@ export async function getPrivateContextMessages(ctx){
 		payload.characteristics = characteristics.data;
 	}
 
-	const payload_text = json2string(payload).slice(0, ai_memory_tools.AI_MEMORY_MAX_PROMPT_CHARS);
+	const payload_text = json2string(payload).slice(0, memory_config.AI_MEMORY_MAX_PROMPT_CHARS);
 	if(!payload_text || payload_text === '{}'){
 		return [];
 	}
