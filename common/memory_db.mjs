@@ -25,10 +25,6 @@ const SETTING_USER_CHARACTERISTICS_ENABLED = 'USER_CHARACTERISTICS_ENABLED';
 const DANGEROUS_JSON_KEYS                  = new Set(['__proto__', 'prototype', 'constructor']);
 const MAX_MERGE_DEPTH                      = 16;
 
-/**
- * Опции безопасного merge для пользовательских характеристик.
- * @returns {{max_depth: Number, dangerous_keys: Set<String>, on_skip_key: Function}}
- */
 function getCharacteristicsMergeOptions(){
 	return {
 		max_depth: MAX_MERGE_DEPTH,
@@ -37,35 +33,18 @@ function getCharacteristicsMergeOptions(){
 	};
 }
 
-/**
- * Проверка доступности хранения user-memory.
- * @returns {Boolean}
- */
 export function isUserMemoryDataEnabled(){
 	return USER_MEMORY_ENABLED;
 }
 
-/**
- * Проверка доступности хранения user-characteristics.
- * @returns {Boolean}
- */
 export function isUserCharacteristicsEnabled(){
 	return USER_CHARACTERISTICS_ENABLED;
 }
 
-/**
- * Проверка доступности хотя бы одной подсистемы приватного контекста.
- * @returns {Boolean}
- */
 export function isPrivateContextEnabled(){
 	return USER_MEMORY_ENABLED || USER_CHARACTERISTICS_ENABLED;
 }
 
-/**
- * Проверка глобальных ENV-настроек для типа приватного контекста.
- * @param {String} context_type
- * @returns {{enabled: Boolean, reason: ?String}}
- */
 function getGlobalContextState(context_type){
 	switch(context_type){
 		case CONTEXT_TYPE_MEMORY:
@@ -79,12 +58,6 @@ function getGlobalContextState(context_type){
 	}
 }
 
-/**
- * Получение per-chat флагов приватного контекста из AI2CHAT_SETTINGS.
- * Отсутствующая настройка трактуется как TRUE, некорректное значение — как FALSE.
- * @param {Number} chat_id
- * @returns {Promise<{user_memory_enabled: Boolean, user_characteristics_enabled: Boolean}>}
- */
 async function getChatPrivateContextSettings(chat_id){
 	const settings = await telegram_db.getChatAISettingsMapByChatId(
 		chat_id,
@@ -94,20 +67,19 @@ async function getChatPrivateContextSettings(chat_id){
 	);
 
 	return {
-		user_memory_enabled: parseBoolSetting(settings[SETTING_USER_MEMORY_ENABLED], true, value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${SETTING_USER_MEMORY_ENABLED}; value=${value}`).then()),
-		user_characteristics_enabled: parseBoolSetting(settings[SETTING_USER_CHARACTERISTICS_ENABLED], true, value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${SETTING_USER_CHARACTERISTICS_ENABLED}; value=${value}`).then())
+		user_memory_enabled: parseBoolSetting(
+			settings[SETTING_USER_MEMORY_ENABLED],
+			true,
+			value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${SETTING_USER_MEMORY_ENABLED}; value=${value}`).then()
+		),
+		user_characteristics_enabled: parseBoolSetting(
+			settings[SETTING_USER_CHARACTERISTICS_ENABLED],
+			true,
+			value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${SETTING_USER_CHARACTERISTICS_ENABLED}; value=${value}`).then()
+		)
 	};
 }
 
-/**
- * Проверка разрешения работы с конкретным типом приватного контекста.
- * @param {CTX} ctx
- * @param {String} context_type
- * @param {String} operation
- * @param {Boolean} [bRequirePrivate=true]
- * @param {Boolean} [bWarn=true]
- * @returns {Promise<{enabled: Boolean, reason: ?String, identity: ?Object}>}
- */
 async function checkPrivateContextAccess(ctx, context_type, operation, bRequirePrivate = true, bWarn = true){
 	const global_state = getGlobalContextState(context_type);
 	if(global_state.enabled !== true){
@@ -148,13 +120,15 @@ async function checkPrivateContextAccess(ctx, context_type, operation, bRequireP
 	return {enabled: true, reason: null, identity};
 }
 
-/**
- * Проверка готовности pgcrypto-хранилища перед низкоуровневой операцией.
- * @param {String} context_type
- * @param {Number} chat_id
- * @param {Number} user_id
- * @returns {Promise<Boolean>}
- */
+function getAccessIdentity(access, operation){
+	if(!access?.identity?.chat_id || !access?.identity?.user_id){
+		logger.warn(`Операция ${operation} получила access.enabled=true без корректного identity. chat_id=${access?.identity?.chat_id}; user_id=${access?.identity?.user_id}`).then();
+		return null;
+	}
+
+	return access.identity;
+}
+
 async function checkStorageReady(context_type, chat_id, user_id){
 	const global_state = getGlobalContextState(context_type);
 	if(global_state.enabled !== true){
@@ -165,10 +139,6 @@ async function checkStorageReady(context_type, chat_id, user_id){
 	return telegram_db.checkUserChatExists(chat_id, user_id);
 }
 
-/**
- * Данные памяти по умолчанию.
- * @returns {{items: Array, updated_at: String}}
- */
 function defaultMemoryData(){
 	return {
 		items: [],
@@ -176,10 +146,6 @@ function defaultMemoryData(){
 	};
 }
 
-/**
- * Данные характеристик по умолчанию.
- * @returns {{profile: Object, observations: Array, updated_at: String}}
- */
 function defaultCharacteristicsData(){
 	return {
 		profile: {},
@@ -188,14 +154,6 @@ function defaultCharacteristicsData(){
 	};
 }
 
-/**
- * Проверка расшифрованного JSON.
- * @param {*} data
- * @param {String} context_type
- * @param {Number} chat_id
- * @param {Number} user_id
- * @returns {?Object}
- */
 function checkDecryptedData(data, context_type, chat_id, user_id){
 	if(!isPlainObject(data)){
 		logger.warn(`Ошибка расшифровки ${context_type}: на выходе не JSON-объект. chat_id=${chat_id}; user_id=${user_id}`).then();
@@ -204,12 +162,6 @@ function checkDecryptedData(data, context_type, chat_id, user_id){
 	return data;
 }
 
-/**
- * Чтение строки USER_MEMORY с расшифровкой через PostgreSQL pgcrypto.
- * @param {Number} chat_id
- * @param {Number} user_id
- * @returns {Promise<?Object>}
- */
 async function readUserMemoryRow(chat_id, user_id){
 	if(!await checkStorageReady(CONTEXT_TYPE_MEMORY, chat_id, user_id)){
 		return null;
@@ -247,12 +199,6 @@ async function readUserMemoryRow(chat_id, user_id){
 	return row;
 }
 
-/**
- * Чтение строки USER_CHARACTERISTICS с расшифровкой через PostgreSQL pgcrypto.
- * @param {Number} chat_id
- * @param {Number} user_id
- * @returns {Promise<?Object>}
- */
 async function readUserCharacteristicsRow(chat_id, user_id){
 	if(!await checkStorageReady(CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
 		return null;
@@ -290,13 +236,6 @@ async function readUserCharacteristicsRow(chat_id, user_id){
 	return row;
 }
 
-/**
- * Сохранение USER_MEMORY с шифрованием через PostgreSQL pgcrypto.
- * @param {Number} chat_id
- * @param {Number} user_id
- * @param {Object} data
- * @returns {Promise<*>}
- */
 async function upsertUserMemoryRow(chat_id, user_id, data){
 	if(!isPlainObject(data)){
 		logger.warn('Нельзя сохранить USER_MEMORY: data не является JSON-объектом.').then();
@@ -329,13 +268,6 @@ async function upsertUserMemoryRow(chat_id, user_id, data){
 	);
 }
 
-/**
- * Сохранение USER_CHARACTERISTICS с шифрованием через PostgreSQL pgcrypto.
- * @param {Number} chat_id
- * @param {Number} user_id
- * @param {Object} data
- * @returns {Promise<*>}
- */
 async function upsertUserCharacteristicsRow(chat_id, user_id, data){
 	if(!isPlainObject(data)){
 		logger.warn('Нельзя сохранить USER_CHARACTERISTICS: data не является JSON-объектом.').then();
@@ -368,15 +300,6 @@ async function upsertUserCharacteristicsRow(chat_id, user_id, data){
 	);
 }
 
-/**
- * Универсальное получение приватных данных.
- * @param {CTX} ctx
- * @param {String} context_type
- * @param {Function} readRowFunc
- * @param {Function} defaultFactory
- * @param {Boolean} [bRequirePrivate=true]
- * @returns {Promise<{enabled: Boolean, data: ?Object, reason: ?String, updated_at: *, version: ?Number}>}
- */
 async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bRequirePrivate = true){
 	if(typeof readRowFunc !== 'function'){
 		logger.warn('getPrivateData: readRowFunc не является функцией.').then();
@@ -393,8 +316,8 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
 		return {enabled: false, data: null, reason: access.reason};
 	}
 
-	if(!access.identity?.chat_id || !access.identity?.user_id){
-		logger.warn(`getPrivateData: невалидный identity. context_type=${context_type}`).then();
+	const identity = getAccessIdentity(access, 'read_private_data');
+	if(!identity){
 		return {enabled: false, data: null, reason: 'invalid_identity'};
 	}
 
@@ -404,13 +327,9 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
 		return {enabled: false, data: null, reason: 'invalid_default_data'};
 	}
 
-	const row = await readRowFunc(access.identity.chat_id, access.identity.user_id);
+	const row = await readRowFunc(identity.chat_id, identity.user_id);
 	if(!row){
-		return {
-			enabled: true,
-			data: default_data,
-			updated_at: null
-		};
+		return {enabled: true, data: default_data, updated_at: null};
 	}
 
 	if(row.enabled !== true){
@@ -430,70 +349,30 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
 	};
 }
 
-/**
- * Системное получение памяти пользователя для текущего chat-user.
- * Может использоваться AI tool-ом в группе, но результат не должен явно выводиться пользователю.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 export async function getUserMemory(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
-/**
- * Явное пользовательское получение памяти. Только для личного чата.
- * Использовать для будущих команд просмотра/экспорта.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 export async function getUserMemoryPrivate(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
 }
 
-/**
- * Внутреннее получение памяти пользователя без требования личного чата.
- * Используется системными функциями накопления chat-user памяти.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 async function getUserMemoryForUpdate(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
-/**
- * Системное получение характеристик пользователя для текущего chat-user.
- * Может использоваться AI tool-ом в группе, но результат не должен явно выводиться пользователю вне личного чата.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 export async function getUserCharacteristics(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
 }
 
-/**
- * Явное пользовательское получение характеристик. Только для личного чата.
- * Использовать для будущих команд просмотра/экспорта.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 export async function getUserCharacteristicsPrivate(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, true);
 }
 
-/**
- * Внутреннее получение характеристик пользователя без требования личного чата.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 async function getUserCharacteristicsForUpdate(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
 }
 
-/**
- * Нормализация одной записи памяти.
- * @param {Object} args
- * @returns {Object}
- */
 function normalizeMemoryItem(args){
 	const data = args?.data && isPlainObject(args.data) ? args.data : {};
 	const text = String(args?.text || args?.content || data.text || '').trim();
@@ -517,21 +396,11 @@ function normalizeMemoryItem(args){
 	};
 }
 
-/**
- * Нормализация одной или нескольких записей памяти.
- * @param {Object|Object[]} args
- * @returns {Object[]}
- */
 function normalizeMemoryItems(args){
 	const raw_items = Array.isArray(args) ? args : (Array.isArray(args?.items) ? args.items : [args]);
 	return raw_items.map(normalizeMemoryItem);
 }
 
-/**
- * Гарантирует наличие ID у всех записей памяти.
- * @param {Object} data
- * @returns {{data: Object, changed: Boolean}}
- */
 function ensureMemoryItemIds(data){
 	const result = isPlainObject(data) ? data : defaultMemoryData();
 	result.items = Array.isArray(result.items) ? result.items : [];
@@ -550,17 +419,15 @@ function ensureMemoryItemIds(data){
 	return {data: result, changed};
 }
 
-/**
- * Сохранение записей памяти пользователя.
- * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
- * @param {CTX} ctx
- * @param {Object|Object[]} args
- * @returns {Promise<Object>}
- */
 export async function setUserMemory(ctx, args){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'set_user_memory', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
+	}
+
+	const identity = getAccessIdentity(access, 'set_user_memory');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
 	}
 
 	if(args?.chat_id || args?.user_id){
@@ -585,19 +452,19 @@ export async function setUserMemory(ctx, args){
 	data.items = data.items.concat(items);
 	data.updated_at = new Date().toISOString();
 
-	await upsertUserMemoryRow(access.identity.chat_id, access.identity.user_id, data);
+	await upsertUserMemoryRow(identity.chat_id, identity.user_id, data);
 	return {ok: true, stored: true, item_count: data.items.length, stored_count: items.length};
 }
 
-/**
- * Получение списка записей памяти для явного пользовательского управления. Только личный чат.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 export async function listUserMemoryItemsPrivate(ctx){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'list_user_memory_items', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason, items: []};
+	}
+
+	const identity = getAccessIdentity(access, 'list_user_memory_items');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity', items: []};
 	}
 
 	const current = await getUserMemoryPrivate(ctx);
@@ -608,23 +475,21 @@ export async function listUserMemoryItemsPrivate(ctx){
 	const {data, changed} = ensureMemoryItemIds(current.data || defaultMemoryData());
 	if(changed){
 		data.updated_at = new Date().toISOString();
-		await upsertUserMemoryRow(access.identity.chat_id, access.identity.user_id, data);
+		await upsertUserMemoryRow(identity.chat_id, identity.user_id, data);
 	}
 
 	return {ok: true, items: data.items, item_count: data.items.length};
 }
 
-/**
- * Редактирование одной записи памяти. Только личный чат.
- * @param {CTX} ctx
- * @param {String} item_id
- * @param {Object} args
- * @returns {Promise<Object>}
- */
 export async function updateUserMemoryItemPrivate(ctx, item_id, args){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'update_user_memory_item', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
+	}
+
+	const identity = getAccessIdentity(access, 'update_user_memory_item');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
 	}
 
 	const id = String(item_id || '').trim();
@@ -644,10 +509,7 @@ export async function updateUserMemoryItemPrivate(ctx, item_id, args){
 	}
 
 	const old_item = data.items[index];
-	const new_item = {
-		...old_item,
-		updated_at: new Date().toISOString()
-	};
+	const new_item = {...old_item, updated_at: new Date().toISOString()};
 
 	if(args?.text != null){
 		new_item.text = redactSecrets(String(args.text || '').trim());
@@ -679,20 +541,19 @@ export async function updateUserMemoryItemPrivate(ctx, item_id, args){
 	data.items[index] = new_item;
 	data.updated_at = new Date().toISOString();
 
-	await upsertUserMemoryRow(access.identity.chat_id, access.identity.user_id, data);
+	await upsertUserMemoryRow(identity.chat_id, identity.user_id, data);
 	return {ok: true, updated: true, item: new_item};
 }
 
-/**
- * Удаление одной записи памяти. Только личный чат.
- * @param {CTX} ctx
- * @param {String} item_id
- * @returns {Promise<Object>}
- */
 export async function deleteUserMemoryItemPrivate(ctx, item_id){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'delete_user_memory_item', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
+	}
+
+	const identity = getAccessIdentity(access, 'delete_user_memory_item');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
 	}
 
 	const id = String(item_id || '').trim();
@@ -713,21 +574,19 @@ export async function deleteUserMemoryItemPrivate(ctx, item_id){
 	}
 
 	data.updated_at = new Date().toISOString();
-	await upsertUserMemoryRow(access.identity.chat_id, access.identity.user_id, data);
+	await upsertUserMemoryRow(identity.chat_id, identity.user_id, data);
 	return {ok: true, deleted: true, item_count: data.items.length};
 }
 
-/**
- * Обновление кумулятивных характеристик пользователя.
- * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
- * @param {CTX} ctx
- * @param {Object} args
- * @returns {Promise<Object>}
- */
 export async function patchUserCharacteristics(ctx, args){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'patch_user_characteristics', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
+	}
+
+	const identity = getAccessIdentity(access, 'patch_user_characteristics');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
 	}
 
 	if(args?.chat_id || args?.user_id){
@@ -767,21 +626,19 @@ export async function patchUserCharacteristics(ctx, args){
 	});
 	data.updated_at = new Date().toISOString();
 
-	await upsertUserCharacteristicsRow(access.identity.chat_id, access.identity.user_id, data);
+	await upsertUserCharacteristicsRow(identity.chat_id, identity.user_id, data);
 	return {ok: true, patched: true};
 }
 
-/**
- * Полный пересчёт характеристик пользователя.
- * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
- * @param {CTX} ctx
- * @param {Object} args
- * @returns {Promise<Object>}
- */
 export async function recalculateUserCharacteristics(ctx, args){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'recalculate_user_characteristics', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
+	}
+
+	const identity = getAccessIdentity(access, 'recalculate_user_characteristics');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
 	}
 
 	if(args?.chat_id || args?.user_id){
@@ -817,48 +674,40 @@ export async function recalculateUserCharacteristics(ctx, args){
 		updated_at: new Date().toISOString()
 	};
 
-	await upsertUserCharacteristicsRow(access.identity.chat_id, access.identity.user_id, data);
+	await upsertUserCharacteristicsRow(identity.chat_id, identity.user_id, data);
 	return {ok: true, recalculated: true};
 }
 
-/**
- * Очистка памяти пользователя. Разрешена только в личном чате.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 export async function deleteUserMemory(ctx){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'delete_user_memory', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
 
-	await upsertUserMemoryRow(access.identity.chat_id, access.identity.user_id, defaultMemoryData());
+	const identity = getAccessIdentity(access, 'delete_user_memory');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
+	}
+
+	await upsertUserMemoryRow(identity.chat_id, identity.user_id, defaultMemoryData());
 	return {ok: true, deleted: true};
 }
 
-/**
- * Очистка характеристик пользователя. Разрешена только в личном чате.
- * @param {CTX} ctx
- * @returns {Promise<Object>}
- */
 export async function deleteUserCharacteristics(ctx){
 	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'delete_user_characteristics', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
 
-	await upsertUserCharacteristicsRow(access.identity.chat_id, access.identity.user_id, defaultCharacteristicsData());
+	const identity = getAccessIdentity(access, 'delete_user_characteristics');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
+	}
+
+	await upsertUserCharacteristicsRow(identity.chat_id, identity.user_id, defaultCharacteristicsData());
 	return {ok: true, deleted: true};
 }
 
-/**
- * Постановка пересчёта характеристик в очередь.
- * Только внутренний вызов. Может работать из группы, но только для текущего ctx.from/ctx.chat.
- * @param {CTX} ctx
- * @param {Object} [args]
- * @param {Boolean} [bInternal=false]
- * @returns {Promise<Object>}
- */
 export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal = false){
 	if(bInternal !== true){
 		const identity = telegram.getContextIdentity(ctx, false);
@@ -871,6 +720,11 @@ export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal =
 		return {ok: false, error: access.reason};
 	}
 
+	const identity = getAccessIdentity(access, 'queue_user_characteristics_recalc');
+	if(!identity){
+		return {ok: false, error: 'invalid_identity'};
+	}
+
 	const priority = Number.parseInt(args?.priority || '100', 10);
 	await db.query(
 		`INSERT INTO USER_MEMORY_RECALC_QUEUE (CHAT_ID, USER_ID, KIND, REASON, PRIORITY, NOT_BEFORE, UPDATED_AT)
@@ -880,17 +734,11 @@ export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal =
                            PRIORITY = LEAST(USER_MEMORY_RECALC_QUEUE.PRIORITY, EXCLUDED.PRIORITY),
                            NOT_BEFORE = LEAST(USER_MEMORY_RECALC_QUEUE.NOT_BEFORE, EXCLUDED.NOT_BEFORE),
                            UPDATED_AT = NOW();`,
-		[access.identity.chat_id, access.identity.user_id, String(args?.reason || 'ai_dialog'), Number.isFinite(priority) ? priority : 100]
+		[identity.chat_id, identity.user_id, String(args?.reason || 'ai_dialog'), Number.isFinite(priority) ? priority : 100]
 	);
 	return {ok: true, queued: true};
 }
 
-/**
- * Формирование приватного контекста для AI-запроса.
- * Данные выдаются только для личного чата с ботом.
- * @param {CTX} ctx
- * @returns {Promise<Object[]>}
- */
 export async function getPrivateContextMessages(ctx){
 	const identity = telegram.getContextIdentity(ctx, false);
 	if(!identity || !telegram.checkPrivateChat(identity, 'get_private_context_messages', false)){
