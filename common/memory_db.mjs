@@ -1,10 +1,11 @@
 import {randomUUID} from 'node:crypto';
 
-import * as db       from './db.mjs';
-import * as logger   from './logger.mjs';
-import * as telegram from './telegram.mjs';
+import * as db          from './db.mjs';
+import * as logger      from './logger.mjs';
+import * as telegram    from './telegram.mjs';
+import * as telegram_db from './telegram_db.mjs';
 import {hasLikelySecret, redactSecrets} from './private_context_sanitizer.mjs';
-import {deepMerge, isPlainObject, json2string} from './utils.mjs';
+import {deepMerge, isPlainObject, json2string, parseBoolSetting} from './utils.mjs';
 
 const AI_MEMORY_ENABLED                    = process.env.AI_MEMORY_ENABLED === 'true';
 const AI_MEMORY_MASTER_KEY                 = process.env.AI_MEMORY_MASTER_KEY || '';
@@ -61,47 +62,6 @@ export function isPrivateContextEnabled(){
 }
 
 /**
- * Получение chat/user из текущего Telegram ctx.
- * @param {CTX} ctx
- * @param {Boolean} [bWarn=true]
- * @returns {?{chat_id: Number, user_id: Number, chat_type: String, username: ?String}}
- */
-function getContextIdentity(ctx, bWarn = true){
-	const message = telegram.getCtxMessage(ctx);
-	const chat    = telegram.getChatFromCtx(ctx) || message?.chat;
-	const user    = telegram.getUserFromCtx(ctx) || message?.from;
-
-	if(!chat?.id || !user?.id){
-		if(bWarn){
-			logger.warn('Не удалось определить текущий chat-user для приватной памяти.').then();
-		}
-		return null;
-	}
-
-	return {
-		chat_id:   chat.id,
-		user_id:   user.id,
-		chat_type: chat.type,
-		username:  user.username || null
-	};
-}
-
-/**
- * Проверка, что текущий вызов идёт из личного чата с ботом.
- * @param {?{chat_id: Number, user_id: Number, chat_type: String}} identity
- * @param {String} operation
- * @param {Boolean} [bWarn=true]
- * @returns {Boolean}
- */
-function checkPrivateChat(identity, operation, bWarn = true){
-	const bPrivate = identity?.chat_type === 'private';
-	if(!bPrivate && bWarn){
-		logger.warn(`Операция ${operation} с пользовательской памятью запрещена вне личного чата. chat_id=${identity?.chat_id}; user_id=${identity?.user_id}`).then();
-	}
-	return bPrivate;
-}
-
-/**
  * Проверка глобальных ENV-настроек для типа приватного контекста.
  * @param {String} context_type
  * @returns {{enabled: Boolean, reason: ?String}}
@@ -120,93 +80,22 @@ function getGlobalContextState(context_type){
 }
 
 /**
- * Проверка, что в БД есть родительские записи CHATS и USERS.
- * @param {Number} chat_id
- * @param {Number} user_id
- * @returns {Promise<Boolean>}
- */
-async function checkUserChatExists(chat_id, user_id){
-	if(!chat_id || !user_id){
-		logger.warn(`Нельзя работать с памятью: пустой chat_id/user_id. chat_id=${chat_id}; user_id=${user_id}`).then();
-		return false;
-	}
-
-	const res = await db.query(
-		`SELECT EXISTS(SELECT 1 FROM CHATS WHERE ID = $1::BIGINT) AS CHAT_EXISTS,
-                EXISTS(SELECT 1 FROM USERS WHERE ID = $2::BIGINT) AS USER_EXISTS;`,
-		[chat_id, user_id]
-	);
-
-	if(!res){
-		logger.warn(`Не удалось проверить наличие CHATS/USERS для памяти. chat_id=${chat_id}; user_id=${user_id}`).then();
-		return false;
-	}
-
-	const row = res?.rows?.[0];
-	if(row?.chat_exists !== true || row?.user_exists !== true){
-		logger.warn(`Нельзя работать с памятью: нет записи CHATS или USERS. chat_id=${chat_id}; user_id=${user_id}; chat_exists=${row?.chat_exists}; user_exists=${row?.user_exists}`).then();
-		return false;
-	}
-
-	return true;
-}
-
-/**
- * Строгое чтение boolean-настройки из AI2CHAT_SETTINGS.
- * @param {?String} value
- * @param {Boolean} default_value
- * @param {String} type
- * @param {Number} chat_id
- * @returns {Boolean}
- */
-function parseBoolSetting(value, default_value, type, chat_id){
-	if(value == null){
-		return default_value;
-	}
-
-	const normalized = String(value).trim().toLowerCase();
-	if(normalized === 'true'){
-		return true;
-	}
-
-	if(normalized === 'false'){
-		return false;
-	}
-
-	logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${type}; value=${value}`).then();
-	return false;
-}
-
-/**
  * Получение per-chat флагов приватного контекста из AI2CHAT_SETTINGS.
  * Отсутствующая настройка трактуется как TRUE, некорректное значение — как FALSE.
  * @param {Number} chat_id
  * @returns {Promise<{user_memory_enabled: Boolean, user_characteristics_enabled: Boolean}>}
  */
 async function getChatPrivateContextSettings(chat_id){
-	const res = await db.query(
-		`SELECT TYPE, VALUE
-         FROM AI2CHAT_SETTINGS
-         WHERE CHAT_ID = $1::BIGINT
-           AND AI_ID = $2::INT
-           AND REASONER_MODE IS FALSE
-           AND TYPE IN ($3::TEXT, $4::TEXT);`,
-		[chat_id, AI_MEMORY_AI_ID, SETTING_USER_MEMORY_ENABLED, SETTING_USER_CHARACTERISTICS_ENABLED]
+	const settings = await telegram_db.getChatAISettingsMapByChatId(
+		chat_id,
+		AI_MEMORY_AI_ID,
+		false,
+		[SETTING_USER_MEMORY_ENABLED, SETTING_USER_CHARACTERISTICS_ENABLED]
 	);
 
-	if(!res){
-		logger.warn(`Не удалось прочитать AI2CHAT_SETTINGS для приватной памяти. chat_id=${chat_id}`).then();
-		return {
-			user_memory_enabled: false,
-			user_characteristics_enabled: false
-		};
-	}
-
-	const settings = {};
-	res.rows?.forEach(row => settings[row.type] = row.value);
 	return {
-		user_memory_enabled: parseBoolSetting(settings[SETTING_USER_MEMORY_ENABLED], true, SETTING_USER_MEMORY_ENABLED, chat_id),
-		user_characteristics_enabled: parseBoolSetting(settings[SETTING_USER_CHARACTERISTICS_ENABLED], true, SETTING_USER_CHARACTERISTICS_ENABLED, chat_id)
+		user_memory_enabled: parseBoolSetting(settings[SETTING_USER_MEMORY_ENABLED], true, value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${SETTING_USER_MEMORY_ENABLED}; value=${value}`).then()),
+		user_characteristics_enabled: parseBoolSetting(settings[SETTING_USER_CHARACTERISTICS_ENABLED], true, value => logger.warn(`Некорректное boolean-значение AI2CHAT_SETTINGS. chat_id=${chat_id}; type=${SETTING_USER_CHARACTERISTICS_ENABLED}; value=${value}`).then())
 	};
 }
 
@@ -228,16 +117,16 @@ async function checkPrivateContextAccess(ctx, context_type, operation, bRequireP
 		return {enabled: false, reason: global_state.reason, identity: null};
 	}
 
-	const identity = getContextIdentity(ctx, bWarn);
+	const identity = telegram.getContextIdentity(ctx, bWarn, 'Не удалось определить текущий chat-user для приватной памяти.');
 	if(!identity?.chat_id || !identity?.user_id){
 		return {enabled: false, reason: 'context_identity_not_found', identity};
 	}
 
-	if(bRequirePrivate && !checkPrivateChat(identity, operation, bWarn)){
+	if(bRequirePrivate && !telegram.checkPrivateChat(identity, operation, bWarn)){
 		return {enabled: false, reason: 'private_chat_required', identity};
 	}
 
-	if(!await checkUserChatExists(identity.chat_id, identity.user_id)){
+	if(!await telegram_db.checkUserChatExists(identity.chat_id, identity.user_id)){
 		return {enabled: false, reason: 'chat_or_user_not_found', identity};
 	}
 
@@ -273,7 +162,7 @@ async function checkStorageReady(context_type, chat_id, user_id){
 		return false;
 	}
 
-	return checkUserChatExists(chat_id, user_id);
+	return telegram_db.checkUserChatExists(chat_id, user_id);
 }
 
 /**
@@ -972,7 +861,7 @@ export async function deleteUserCharacteristics(ctx){
  */
 export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal = false){
 	if(bInternal !== true){
-		const identity = getContextIdentity(ctx, false);
+		const identity = telegram.getContextIdentity(ctx, false);
 		logger.warn(`Прямой вызов queueUserCharacteristicsRecalc заблокирован. chat_id=${identity?.chat_id}; user_id=${identity?.user_id}`).then();
 		return {ok: false, error: 'direct_call_forbidden'};
 	}
@@ -1003,8 +892,8 @@ export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal =
  * @returns {Promise<Object[]>}
  */
 export async function getPrivateContextMessages(ctx){
-	const identity = getContextIdentity(ctx, false);
-	if(!identity || !checkPrivateChat(identity, 'get_private_context_messages', false)){
+	const identity = telegram.getContextIdentity(ctx, false);
+	if(!identity || !telegram.checkPrivateChat(identity, 'get_private_context_messages', false)){
 		return [];
 	}
 
