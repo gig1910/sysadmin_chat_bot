@@ -180,11 +180,12 @@ const recalculateUserCharacteristicsTool = {
 
 /**
  * Доступен ли текущий Telegram ctx как личный чат.
+ * Если ctx не передан старым caller-ом, список tools не режется здесь, но выполнение всё равно защищено в memory_db.mjs.
  * @param {CTX} ctx
  * @returns {Boolean}
  */
 function isPrivateChat(ctx){
-	return telegram.getChatFromCtx(ctx)?.type === 'private';
+	return !ctx || telegram.getChatFromCtx(ctx)?.type === 'private';
 }
 
 /**
