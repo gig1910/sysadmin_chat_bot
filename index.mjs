@@ -13,6 +13,82 @@ import {checkAIToolsConfig} from './common/ai_tools.mjs';
 
 logger.info('Starting main').then();
 
+const AI_SETTINGS_TYPES = new Set([
+	'SYSTEM_PROMPT',
+	'SUMMARY_PROMPT',
+	'TEST_SPAM_PROMPT',
+	'TEMPERATURE',
+	'MESSAGE_LIMIT',
+	'USER_MEMORY_ENABLED',
+	'USER_CHARACTERISTICS_ENABLED'
+]);
+const AI_MEMORY_SETTINGS_TYPES = new Set([
+	'USER_MEMORY_ENABLED',
+	'USER_CHARACTERISTICS_ENABLED'
+]);
+const AI_BOOLEAN_SETTINGS_TYPES = new Set([
+	'USER_MEMORY_ENABLED',
+	'USER_CHARACTERISTICS_ENABLED'
+]);
+
+/**
+ * Проверка доступа к управлению AI-настройками текущего чата.
+ * В private-чате admin-check не требуется, в группе требуется админ.
+ * @param {CTX} ctx
+ * @param {String} command
+ * @returns {Promise<Boolean>}
+ */
+async function requireAISettingsAccess(ctx, command){
+	const chat = telegram.getChatFromCtx(ctx);
+	if(chat?.type === 'private'){
+		return true;
+	}
+
+	const bAllowed = await telegram.requireChatAdmin(ctx);
+	if(!bAllowed){
+		logger.info(`Команда \`${command}\` не от админа чата`).then();
+	}
+	return bAllowed;
+}
+
+/**
+ * Нормализация значения AI-настройки.
+ * @param {String} type
+ * @param {String} value
+ * @returns {?String}
+ */
+function normalizeAISettingValue(type, value){
+	const text = String(value ?? '').trim();
+	if(AI_BOOLEAN_SETTINGS_TYPES.has(type)){
+		const normalized = text.toLowerCase();
+		if(normalized === 'true' || normalized === 'false'){
+			return normalized;
+		}
+		return null;
+	}
+
+	return text;
+}
+
+/**
+ * Формат справки по команде set_ai_settings.
+ * @returns {String}
+ */
+function getSetAISettingsUsage(){
+	return `Неверная команда.
+Требуется формат:
+
+\`/set_ai_settings MODE NAME VALUE\`
+
+Примеры:
+\`/set_ai_settings false SYSTEM_PROMPT Текст системного промпта\`
+\`/set_ai_settings true TEMPERATURE 1.2\`
+\`/set_ai_settings false USER_MEMORY_ENABLED true\`
+\`/set_ai_settings false USER_CHARACTERISTICS_ENABLED false\`
+
+Для USER_MEMORY_ENABLED и USER_CHARACTERISTICS_ENABLED значение должно быть только true/false. Режим MODE для этих настроек принудительно считается false, так как память читается из обычного режима чата.`;
+}
+
 //***************************************
 
 telegram.bot.onerror = err => {
@@ -118,7 +194,7 @@ telegram.bot.command('deepseek_summary', async(ctx) => {
 });
 
 telegram.bot.command('get_ai_settings', async(ctx) => {
-	if(await telegram.requireChatAdmin(ctx)){
+	if(await requireAISettingsAccess(ctx, 'get_ai_settings')){
 		telegram.sendAutoRemoveMsg(ctx, 'Текущие настройки АИ для чата:').then();
 		telegram.sendAutoRemoveMsg(ctx, 'Режим чата:').then();
 		let settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
@@ -132,27 +208,35 @@ telegram.bot.command('get_ai_settings', async(ctx) => {
 			const setting = settings[i];
 			telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
 		}
-
-	}else{
-		// Команда не от админа
-		logger.info('Команда `\get_ai_settings` не от админа чата').then();
 	}
 
 	// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
 });
 
 telegram.bot.command('set_ai_settings', async(ctx) => {
-	if(await telegram.requireChatAdmin(ctx)){
+	if(await requireAISettingsAccess(ctx, 'set_ai_settings')){
 		// Очистка текста от самой команды
 		const message = telegram.getCtxMessage(ctx);
-		const msg     = message.text.replace(/^\/set_ai_settints(?:@\w+)?\s*/igm, '').trim();
+		const msg     = message.text.replace(/^\/set_ai_settings(?:@\w+)?\s*/igm, '').trim();
 
 		// Парсим командный текст по образцу
 		// MODE TYPE VALUE
-		const arr = (/^(true|false)\s+(SYSTEM_PROMPT|SUMMARY_PROMPT|TEST_SPAM_PROMPT|TEMPERATURE)\s+(.*)/igm).exec(msg.replace(/\n/igm, '\\n'));
+		const arr = (/^(true|false)\s+(SYSTEM_PROMPT|SUMMARY_PROMPT|TEST_SPAM_PROMPT|TEMPERATURE|MESSAGE_LIMIT|USER_MEMORY_ENABLED|USER_CHARACTERISTICS_ENABLED)\s+([\s\S]*)/igm).exec(msg.replace(/\n/igm, '\\n'));
 		if(arr?.length >= 4 && arr[1] && arr[2] && arr[3]){
+			const type = arr[2]?.toUpperCase().trim();
+			let reasoner_mode = arr[1]?.toLowerCase() === 'true';
+			const value = normalizeAISettingValue(type, arr[3]);
+
+			if(!AI_SETTINGS_TYPES.has(type) || value == null || value === ''){
+				return telegram.sendAutoRemoveMsg(ctx, getSetAISettingsUsage(), true);
+			}
+
+			if(AI_MEMORY_SETTINGS_TYPES.has(type)){
+				reasoner_mode = false;
+			}
+
 			try{
-				await telegram_db.setChatAISettings(ctx, deepseek.AI_ID, arr[1]?.toLowerCase() === 'true', arr[2]?.toUpperCase().trim(), arr[3]?.trim());
+				await telegram_db.setChatAISettings(ctx, deepseek.AI_ID, reasoner_mode, type, value);
 				return telegram.sendAutoRemoveMsg(ctx, 'Параметр сохранён.');
 
 			}catch(err){
@@ -161,12 +245,8 @@ telegram.bot.command('set_ai_settings', async(ctx) => {
 			}
 
 		}else{
-			return telegram.sendAutoRemoveMsg(ctx, 'Неверная команда. Требуется указать в формате ```MODE NAME VALUE```', true);
+			return telegram.sendAutoRemoveMsg(ctx, getSetAISettingsUsage(), true);
 		}
-
-	}else{
-		// Команда не от админа
-		logger.info('Команда `\get_ai_settings` не от админа чата').then();
 	}
 
 	// telegram.deleteMessage(ctx).then(); // Удаляем команду
