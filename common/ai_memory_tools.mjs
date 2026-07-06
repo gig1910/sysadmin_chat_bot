@@ -33,7 +33,7 @@ const getUserMemoryTool = {
 	type: 'function',
 	function: {
 		name: 'get_user_memory',
-		description: 'Read encrypted memory for the current Telegram chat-user pair. Available only if enabled in chat. The model cannot choose chat_id or user_id.',
+		description: 'Read encrypted memory for the current Telegram chat-user pair. Available only in a private chat with the bot. The model cannot choose chat_id or user_id.',
 		parameters: {
 			type: 'object',
 			properties: {},
@@ -46,7 +46,7 @@ const setUserMemoryTool = {
 	type: 'function',
 	function: {
 		name: 'set_user_memory',
-		description: 'Store one or more user memory items for the current Telegram chat-user pair. Available only in a private chat with the bot. Never store secrets, passwords, tokens, private keys, addresses, phone numbers, medical, religious, sexual, children or other sensitive data.',
+		description: 'Store one or more user memory items for the current Telegram chat-user pair. Available if enabled in chat. System tool: can be used from group chats, but only for the current Telegram user from ctx. Do not provide chat_id or user_id. Never store secrets, passwords, tokens, private keys, addresses, phone numbers, medical, religious, sexual, children or other sensitive data.',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -189,9 +189,8 @@ function isPrivateChat(ctx){
 
 /**
  * Получение списка memory tools для текущего ctx.
- * Чтение памяти доступно в любом чате, где память включена.
- * Изменение/очистка памяти пока выдаётся только в личке.
- * Системные tools характеристик доступны и в группе.
+ * Просмотр/очистка памяти выдаются только в личке.
+ * Системное накопление памяти и характеристик доступно и в группе.
  * @param {CTX} ctx
  * @returns {Object[]}
  */
@@ -204,9 +203,9 @@ export function getMemoryToolDefinitions(ctx){
 	const bPrivate = isPrivateChat(ctx);
 
 	if(isUserMemoryDataEnabled()){
-		tools.push(getUserMemoryTool);
+		tools.push(setUserMemoryTool);
 		if(bPrivate){
-			tools.push(setUserMemoryTool, deleteUserMemoryTool);
+			tools.push(getUserMemoryTool, deleteUserMemoryTool);
 		}
 	}
 
