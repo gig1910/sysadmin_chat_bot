@@ -588,11 +588,22 @@ async function getUserMemoryForUpdate(ctx){
 }
 
 /**
- * Получение кумулятивных характеристик пользователя для текущего chat-user. Только для личного чата.
+ * Системное получение характеристик пользователя для текущего chat-user.
+ * Может использоваться AI tool-ом в группе, но результат не должен явно выводиться пользователю вне личного чата.
  * @param {CTX} ctx
  * @returns {Promise<Object>}
  */
 export async function getUserCharacteristics(ctx){
+	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
+}
+
+/**
+ * Явное пользовательское получение характеристик. Только для личного чата.
+ * Использовать для будущих команд просмотра/экспорта.
+ * @param {CTX} ctx
+ * @returns {Promise<Object>}
+ */
+export async function getUserCharacteristicsPrivate(ctx){
 	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, true);
 }
 
