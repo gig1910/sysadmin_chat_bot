@@ -1,38 +1,23 @@
-import * as telegram  from './telegram.mjs';
-import * as memory_db from './memory_db.mjs';
+import * as telegram      from './telegram.mjs';
+import * as memory_db     from './memory_db.mjs';
+import * as memory_config from './ai_memory_config.mjs';
 
-export const AI_MEMORY_ENABLED                    = process.env.AI_MEMORY_ENABLED === 'true';
-export const AI_MEMORY_MASTER_KEY                 = process.env.AI_MEMORY_MASTER_KEY || '';
-export const AI_MEMORY_MASTER_KEY_CONFIGURED      = AI_MEMORY_MASTER_KEY.trim().length > 0;
-export const AI_USER_MEMORY_ENABLED               = AI_MEMORY_ENABLED && (process.env.AI_USER_MEMORY_ENABLED ?? 'true') === 'true';
-export const AI_USER_CHARACTERISTICS_ENABLED      = AI_MEMORY_ENABLED && (process.env.AI_USER_CHARACTERISTICS_ENABLED ?? 'true') === 'true';
-export const USER_MEMORY_ENABLED                  = AI_USER_MEMORY_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
-export const USER_CHARACTERISTICS_ENABLED         = AI_USER_CHARACTERISTICS_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
-export const USER_MEMORY_DISABLED_REASON          = !AI_MEMORY_ENABLED ? 'memory_disabled' : (!AI_USER_MEMORY_ENABLED ? 'user_memory_disabled' : (!AI_MEMORY_MASTER_KEY_CONFIGURED ? 'encryption_key_not_configured' : null));
-export const USER_CHARACTERISTICS_DISABLED_REASON = !AI_MEMORY_ENABLED ? 'memory_disabled' : (!AI_USER_CHARACTERISTICS_ENABLED ? 'user_characteristics_disabled' : (!AI_MEMORY_MASTER_KEY_CONFIGURED ? 'encryption_key_not_configured' : null));
-export const AI_MEMORY_AI_ID                      = Number.parseInt(process.env.AI_MEMORY_AI_ID || '1', 10) || 1;
-export const AI_MEMORY_MAX_PROMPT_CHARS           = Math.max(500, Number.parseInt(process.env.AI_MEMORY_MAX_PROMPT_CHARS || '2500', 10));
-export const CONTEXT_TYPE_MEMORY                  = 'user_memory';
-export const CONTEXT_TYPE_CHARACTERISTICS         = 'user_characteristics';
-export const SETTING_USER_MEMORY_ENABLED          = 'USER_MEMORY_ENABLED';
-export const SETTING_USER_CHARACTERISTICS_ENABLED = 'USER_CHARACTERISTICS_ENABLED';
-export const DANGEROUS_JSON_KEYS                  = new Set(['__proto__', 'prototype', 'constructor']);
-export const MAX_MERGE_DEPTH                      = 16;
+export * from './ai_memory_config.mjs';
 
 /**
  * Проверка доступности хранения user-memory.
  * @returns {Boolean}
  */
 export function isUserMemoryDataEnabled(){
-	return USER_MEMORY_ENABLED;
+	return memory_config.USER_MEMORY_ENABLED;
 }
 
 export function isPrivateContextEnabled(){
-	return USER_MEMORY_ENABLED || USER_CHARACTERISTICS_ENABLED;
+	return memory_config.USER_MEMORY_ENABLED || memory_config.USER_CHARACTERISTICS_ENABLED;
 }
 
 export function isUserCharacteristicsEnabled(){
-	return USER_CHARACTERISTICS_ENABLED;
+	return memory_config.USER_CHARACTERISTICS_ENABLED;
 }
 
 const memoryToolNames = new Set([
