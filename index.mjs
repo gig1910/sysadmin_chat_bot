@@ -10,7 +10,6 @@ import * as ai_tools        from './common/ai_tools.mjs';
 import * as ai_commands     from './common/ai_commands.mjs';
 import * as memory_commands from './common/memory_commands.mjs';
 
-
 //-----------------------------
 
 logger.info('Starting main').then();
@@ -35,7 +34,6 @@ telegram.bot.command('getchatid', async(ctx) => {
 
 		if(chat?.id && user?.id){
 			res = telegram.sendAutoRemoveMsg(ctx, `userID: ${user?.id}; chatID: ${chat?.id}`, false, 5000);
-
 		}
 	}
 
@@ -153,7 +151,7 @@ await ai_tools.checkAIToolsConfig();
 logger.info('AI tools config checked.').then();
 
 /*
-"pre_checkout_query" | "poll_answer" | "poll" | "shipping_query" | "chat_join_request" | "chat_boost" | "removed_chat_boost" | "has_media_spoiler" | "new_chat_members" | "left_chat_member" |
+"pre_checkout_query" | "poll_answer" | "poll" | "poll" | "shipping_query" | "chat_join_request" | "chat_boost" | "removed_chat_boost" | "has_media_spoiler" | "new_chat_members" | "left_chat_member" |
 "new_chat_title" | "new_chat_photo" | "delete_chat_photo" | "group_chat_created" | "supergroup_chat_created" | "channel_chat_created" | "message_auto_delete_timer_changed" | "migrate_to_chat_id" |
 "migrate_from_chat_id" | "pinned_message" | "invoice" | "successful_payment" | "connected_website" | "write_access_allowed" | "passport_data" | "proximity_alert_triggered" | "boost_added" |
 "forum_topic_created" | "forum_topic_edited" | "forum_topic_closed" | "forum_topic_reopened" | "general_forum_topic_hidden" | "general_forum_topic_unhidden" |
@@ -194,7 +192,7 @@ telegram.bot.on([
 
 			// Получаем список 20 сообщений как диалог (сообщения по ответам) для нормального сохранения истории и скармливаем это DeepSeek
 			// Ответ отправляем как ответ на сообщение, т.к. возможен разрыв в ответах, что бы понимать на что DeepSeek отвечал
-			return deepseek.isAIAllowed && deepseek.deepSeekTalks(ctx);
+			return deepseek.isAIAllowed() && deepseek.deepSeekTalks(ctx);
 
 		}else{              // Сообщение в группу
 			if(userState?.new_user !== false){
