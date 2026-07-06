@@ -33,7 +33,7 @@ const getUserMemoryTool = {
 	type: 'function',
 	function: {
 		name: 'get_user_memory',
-		description: 'Read encrypted memory for the current Telegram chat-user pair. Available only in a private chat with the bot. The model cannot choose chat_id or user_id.',
+		description: 'Read encrypted memory for the current Telegram chat-user pair. Available only if enabled in chat. The model cannot choose chat_id or user_id.',
 		parameters: {
 			type: 'object',
 			properties: {},
@@ -189,7 +189,9 @@ function isPrivateChat(ctx){
 
 /**
  * Получение списка memory tools для текущего ctx.
- * Read/manage tools выдаются только в личке, системные tools характеристик — и в группе.
+ * Чтение памяти доступно в любом чате, где память включена.
+ * Изменение/очистка памяти пока выдаётся только в личке.
+ * Системные tools характеристик доступны и в группе.
  * @param {CTX} ctx
  * @returns {Object[]}
  */
@@ -201,8 +203,11 @@ export function getMemoryToolDefinitions(ctx){
 	const tools = [];
 	const bPrivate = isPrivateChat(ctx);
 
-	if(bPrivate && isUserMemoryDataEnabled()){
-		tools.push(getUserMemoryTool, setUserMemoryTool, deleteUserMemoryTool);
+	if(isUserMemoryDataEnabled()){
+		tools.push(getUserMemoryTool);
+		if(bPrivate){
+			tools.push(setUserMemoryTool, deleteUserMemoryTool);
+		}
 	}
 
 	if(isUserCharacteristicsEnabled()){
