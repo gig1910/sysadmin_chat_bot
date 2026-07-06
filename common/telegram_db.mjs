@@ -141,6 +141,20 @@ export const getUserStateFromChat = async(chat, user) => {
 	};
 };
 
+function assertMessageRelations(chat, user, message){
+	if(!message?.message_id){
+		throw new Error('Cannot save message without message_id.');
+	}
+
+	if(!chat?.id){
+		throw new Error(`Cannot save message ${message.message_id}: chat.id is empty.`);
+	}
+
+	if(!user?.id){
+		throw new Error(`Cannot save message ${message.message_id}: user.id is empty.`);
+	}
+}
+
 /**
  * Добавление сообщений в БД
  * @param {Object} ctx
@@ -149,11 +163,22 @@ export const getUserStateFromChat = async(chat, user) => {
  * @param {Object} message
  * @returns {Promise<*>}
  */
-export const addMessage2DB = async(ctx, chat, user, message) => db.query(`
+export const addMessage2DB = async(ctx, chat, user, message) => {
+	assertMessageRelations(chat, user, message);
+
+	// MESSAGES имеет FK на CHATS и USERS. Поэтому addMessage2DB сам гарантирует наличие
+	// родительских записей, даже если внешний обработчик ещё не успел их создать.
+	await Promise.all([
+		addChat2DB(chat),
+		addUser2DB(user)
+	]);
+
+	return db.query(`
             INSERT INTO MESSAGES (MESSAGE_ID, CHAT_ID, USER_ID, MESSAGE, CTX)
             VALUES ($1::BIGINT, $2::BIGINT, $3::BIGINT, $4::JSONB, ($5::JSONB - 'telegram'))
             ON CONFLICT DO NOTHING;`,
-	[message?.message_id, chat?.id, user?.id, json(message), jsonSafe(ctx)]);
+		[message?.message_id, chat?.id, user?.id, json(message), jsonSafe(ctx)]);
+};
 
 /**
  * Получаем историю сообщений по связке "ответ на" начиная с переданного id
@@ -261,82 +286,60 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval = '
                 FROM MESSAGES M
                          JOIN USERS U ON M.USER_ID = U.ID
                 WHERE M.CHAT_ID = $1::BIGINT
-                  AND M.TIMESTAMP >= NOW() - $2::INTERVAL
-                  AND NOT (M.MESSAGE ->> 'text' ~* '^/')
-                ORDER BY M.TIMESTAMP;`,
-		[chat_id, interval]
-	))?.rows?.map(row => {
-		const content = row.message_text;
-		const msg     = {
-			role: parseInt(row.user_id, 10) === bot_id ? 'assistant' : 'user',
-			content
-		};
+                  AND M.TIMESTAMP > NOW() - ($2::TEXT)::INTERVAL
+                  AND U.ID <> $3::BIGINT
+                  AND COALESCE(M.MESSAGE ->> 'text', '') <> ''
+                  AND LEFT(COALESCE(M.MESSAGE ->> 'text', ''), 1) <> '/'
+                ORDER BY M.TIMESTAMP DESC`, [chat_id, interval, bot_id]))?.rows?.map(row => {
+		if(row){
+			return {
+				role:    'user', // только 'system', 'user', 'assistant', 'tool',
+				name:    row.username,
+				content: row.message_text
+			};
 
-		if(msg.role === 'user' && row.username){
-			msg.name = row.username;
+		}else{
+			return null;
 		}
+	})?.filter(row => !!row)?.filter(mess => !!mess.content);
 
-		return msg;
-	}).filter(mess => !!mess?.content);
+export const getChatAISettings = async(ctx, ai_id, reasoner_mode, type) => db.query(`
+    SELECT TYPE, VALUE
+    FROM AI2CHAT_SETTINGS
+    WHERE CHAT_ID = $1::BIGINT
+      AND AI_ID = $2::INT
+      AND REASONER_MODE = $3::BOOL
+      AND ($4::TEXT IS NULL OR TYPE = $4::TEXT)
+    ORDER BY TYPE;`, [telegram.getChatFromCtx(ctx)?.id, ai_id, !!reasoner_mode, type]);
 
-export const getChatsSettings = async(chat_id) => db.query(`
-    SELECT ID, CLEAR_INTERVAL::TEXT AS CLEAR_INTERVAL
-    FROM CHATS
-    ORDER BY ID;`);
+export const setChatAISettings = async(ctx, ai_id, reasoner_mode, type, value) => db.query(`
+    INSERT INTO AI2CHAT_SETTINGS (CHAT_ID, AI_ID, TYPE, REASONER_MODE, VALUE)
+    VALUES ($1::BIGINT, $2::INT, $3::TEXT, $4::BOOL, $5::TEXT)
+    ON CONFLICT (CHAT_ID, AI_ID, TYPE, REASONER_MODE) DO UPDATE SET VALUE=EXCLUDED.VALUE;`, [telegram.getChatFromCtx(ctx)?.id, ai_id, type, reasoner_mode, value]);
 
-export const removeMessages = async(chat_id, interval) => chat_id && interval && db.query(`
-            WITH DEL AS (
-                DELETE FROM MESSAGES WHERE CHAT_ID = $1::BIGINT AND TIMESTAMP < NOW() - $2::INTERVAL RETURNING MESSAGES.MESSAGE_ID)
-            SELECT COUNT(*)
-            FROM DEL;`,
-	[chat_id, interval]);
+/**
+ * Запись запроса к AI в БД
+ * @param {Number} ai_id
+ * @param {Number} ai_kind
+ * @param {Number} ai_model
+ * @param {Object} request
+ * @return {Promise<Number>}
+ */
+export const insertAIRequest = async(ai_id, ai_kind, ai_model, request) => (await db.query(`
+    INSERT INTO AI_REQUEST (AI_ID, AI_KIND, AI_MODEL, REQUEST)
+    VALUES ($1::INT, $2::INT, $3::INT, $4::JSONB)
+    RETURNING ID;`, [ai_id, ai_kind, ai_model, jsonSafe(request)]))?.rows[0]?.id;
 
-export const getChatAISettings = async(ctx, ai_id, analise, type) =>
-	type ? db.query(`SELECT VALUE
-                     FROM AI2CHAT_SETTINGS
-                     WHERE AI_ID = $1::INT
-                       AND CHAT_ID = $2::BIGINT
-                       AND REASONER_MODE = $3::BOOL
-                       AND TYPE = $4::TEXT
-                     LIMIT 1;`, [ai_id, telegram.getChatFromCtx(ctx)?.id, !!analise, type])
-		: db.query(`SELECT REASONER_MODE, TYPE, VALUE
-                    FROM AI2CHAT_SETTINGS
-                    WHERE AI_ID = $1::INT
-                      AND CHAT_ID = $2::BIGINT
-                      AND REASONER_MODE = $3::BOOL
-                    ORDER BY TYPE;`, [ai_id, telegram.getChatFromCtx(ctx)?.id, !!analise]);
-
-export const setChatAISettings = async(ctx, ai_id, analise, type, value) => {
-	const chat = telegram.getChatFromCtx(ctx);
-	if(ai_id && !isNaN(chat?.id) && type){
-		return db.query(`
-                    WITH INS AS (
-                        INSERT INTO AI2CHAT_SETTINGS (CHAT_ID, AI_ID, TYPE, REASONER_MODE, VALUE)
-                            VALUES ($1::BIGINT, $2::INT, $3::TEXT, $4::BOOL, $5::TEXT)
-                            ON CONFLICT (CHAT_ID, AI_ID, TYPE, REASONER_MODE) DO UPDATE SET VALUE = EXCLUDED.VALUE
-                            RETURNING 1)
-                    SELECT COUNT(*)
-                    FROM INS;`,
-			[chat?.id, ai_id, type, !!analise, value]);
-	}
-};
-
-export const insertAIRequest = async(ai_id, ai_kind, ai_model, messages) =>
-	(await db.query(`WITH INS (ID) AS (
-                INSERT
-                    INTO AI_REQUEST (REQUEST, AI_ID, AI_KIND, AI_MODEL)
-                        VALUES ($1::JSONB, $2:: INT, $3:: SMALLINT, $4:: SMALLINT) RETURNING ID)
-                     SELECT ID
-                     FROM INS;`,
-		[json(messages), ai_id, ai_kind, ai_model]))?.rows?.[0]?.id;
-
-export const updateAIRequest = async(id, response, error) =>
-	response ? (await db.query(`UPDATE AI_REQUEST
-                                SET ANSWER           = $1::JSONB,
-                                    ANSWER_TIMESTAMP = NOW()
-                                WHERE ID = $2:: INT;`, [json(response), id]))
-		: error ? (await db.query(`UPDATE AI_REQUEST
-                                   SET ERROR           = $1::JSONB,
-                                       ERROR_TIMESTAMP = NOW()
-                                   WHERE ID = $2:: INT;`, [json(error), id]))
-			: null;
+/**
+ * Обновление данных запроса к AI
+ * @param {Number} id
+ * @param {Object} answer
+ * @param {Object} error
+ */
+export const updateAIRequest = async(id, answer, error = null) => db.query(`
+    UPDATE AI_REQUEST
+    SET ANSWER           = $2::JSONB,
+        ERROR            = $3::JSONB,
+        ANSWER_TIMESTAMP = CASE WHEN $2::JSONB IS NULL THEN ANSWER_TIMESTAMP ELSE NOW() END,
+        ERROR_TIMESTAMP  = CASE WHEN $3::JSONB IS NULL THEN ERROR_TIMESTAMP ELSE NOW() END
+    WHERE ID = $1::INT`, [id, jsonSafe(answer), jsonSafe(error)]);
