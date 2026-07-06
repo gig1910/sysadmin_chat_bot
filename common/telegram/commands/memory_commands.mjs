@@ -1,10 +1,11 @@
 import {Markup} from 'telegraf';
 
-import * as logger    from '../../logger.mjs';
-import * as telegram  from '../../telegram.mjs';
-import * as tg_db     from '../../telegram_db.mjs';
-import * as memory_db from '../../memory_db.mjs';
-import {json2string}  from '../../utils.mjs';
+import * as logger        from '../../logger.mjs';
+import * as telegram      from '../../telegram.mjs';
+import * as tg_db         from '../../telegram_db.mjs';
+import * as memory_db     from '../../memory_db.mjs';
+import * as memory_recalc from '../../memory/recalculate.mjs';
+import {json2string}      from '../../utils.mjs';
 import * as ai_memory_tools from '../../memory/tools.mjs';
 
 /**
@@ -96,12 +97,73 @@ async function sendMemoryManager(ctx){
 }
 
 /**
+ * Извлечение аргументов команды пересчёта памяти.
+ * @param {CTX} ctx
+ * @returns {String}
+ */
+function getMemoryRecalculateCommandArgs(ctx){
+	const message = telegram.getCtxMessage(ctx);
+	return message?.text?.replace(/^\/memory_(?:recalculate|recalc)(?:@\w+)?\s*/igm, '').trim() || '';
+}
+
+/**
+ * Формирование короткого отчёта о batch-пересчёте памяти.
+ * @param {Object} res
+ * @returns {String}
+ */
+function formatMemoryRecalculateResult(res){
+	if(res?.ok !== true){
+		return `Не удалось выполнить пересчёт памяти: ${res?.error || 'unknown_error'}`;
+	}
+
+	return [
+		`Пересчёт памяти выполнен.`,
+		`Период: ${res.interval}`,
+		`Сообщений проанализировано: ${res.message_count}`,
+		`Участников найдено: ${res.users_seen}`,
+		`Участников обновлено: ${res.users_updated}`,
+		`Записей памяти добавлено: ${res.memory_stored}`,
+		`Характеристик обновлено: ${res.characteristics_patched}`,
+		res.note ? `Примечание: ${res.note}` : null
+	].filter(Boolean).join('\n');
+}
+
+/**
+ * Принудительный пересчёт памяти/характеристик участников чата за период.
+ * Доступен только администратору группы/супергруппы.
+ * @param {CTX} ctx
+ * @returns {Promise<*>}
+ */
+async function runMemoryRecalculate(ctx){
+	if(!await telegram.requireChatAdmin(ctx)){
+		return;
+	}
+
+	const args = getMemoryRecalculateCommandArgs(ctx);
+	await telegram.sendAutoRemoveMsg(ctx, 'Запущен пересчёт памяти и характеристик участников чата. Это может занять некоторое время.', false, 30000);
+
+	try{
+		const res = await memory_recalc.recalculateChatUsersMemory(ctx, args);
+		return telegram.sendMessage(ctx, formatMemoryRecalculateResult(res), false);
+
+	}catch(err){
+		logger.err(err).then();
+		return telegram.sendMessage(ctx, `Ошибка пересчёта памяти: ${err?.message || err}`, false);
+	}
+}
+
+/**
  * Регистрация команд управления памятью и характеристиками пользователя.
  * Явный вывод/редактирование/удаление разрешены только в личном чате.
  * @param {*} bot
  * @returns {void}
  */
 export function registerMemoryCommands(bot){
+	if(ai_memory_tools.isPrivateContextEnabled()){
+		bot?.command('memory_recalculate', async(ctx) => runMemoryRecalculate(ctx));
+		bot?.command('memory_recalc', async(ctx) => runMemoryRecalculate(ctx));
+	}
+
 	if(ai_memory_tools.isUserMemoryDataEnabled()){
 		bot?.command('memory', async(ctx) => sendMemoryManager(ctx));
 
