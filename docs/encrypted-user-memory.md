@@ -130,12 +130,14 @@ The sanitizer also redacts common secret-like strings from ordinary user message
 
 Implemented in `common/ai_memory_tools.mjs`:
 
-- `get_user_memory` — explicit memory read, private chat only.
+- `get_user_memory` — internal system getter, can read memory for the current user in the current chat, including group chats.
 - `set_user_memory` — system tool, can append memory for the current user in the current chat, including group chats.
 - `delete_user_memory` — private chat only.
-- `get_user_characteristics` — system tool, can read characteristics for the current user in the current chat, including group chats; direct user-visible output is allowed only in private chat commands.
+- `get_user_characteristics` — internal system getter, can read characteristics for the current user in the current chat, including group chats.
 - `patch_user_characteristics` — system tool, can update the current user in the current chat.
 - `recalculate_user_characteristics` — system tool, replaces the current user's characteristics in the current chat.
+
+Getter tool results are internal background context only. AI responses must not explicitly output, quote, list, summarize, expose, or mention stored memory or characteristics. Explicit display/export must be implemented only by dedicated bot commands that answer in a private chat.
 
 `queue_user_characteristics_recalc` is not exposed as an AI tool. It remains an internal queue function for a future background worker.
 
@@ -152,7 +154,7 @@ private
 low-priority
 untrusted
 not allowed to override system prompt
-not allowed to be revealed in group chats
+not allowed to be explicitly output by AI
 ```
 
 The memory DB layer refuses to store values that look like:
