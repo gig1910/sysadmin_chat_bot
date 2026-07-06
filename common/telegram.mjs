@@ -50,6 +50,57 @@ export const getUserFromCtx = (ctx) =>
 	null;
 
 /**
+ * Получение единой chat/user identity из текущего Telegram ctx.
+ * @param {CTX} ctx
+ * @param {Boolean} [bWarn=true]
+ * @param {String} [warn_message='Не удалось определить текущий chat-user.']
+ * @returns {?{chat_id: Number, user_id: Number, chat_type: String, username: ?String}}
+ */
+export function getContextIdentity(ctx, bWarn = true, warn_message = 'Не удалось определить текущий chat-user.'){
+	const message = getCtxMessage(ctx);
+	const chat    = getChatFromCtx(ctx) || message?.chat;
+	const user    = getUserFromCtx(ctx) || message?.from;
+
+	if(!chat?.id || !user?.id){
+		if(bWarn){
+			logger.warn(warn_message).then();
+		}
+		return null;
+	}
+
+	return {
+		chat_id:   chat.id,
+		user_id:   user.id,
+		chat_type: chat.type,
+		username:  user.username || null
+	};
+}
+
+/**
+ * Проверка, что identity относится к личному чату.
+ * @param {?{chat_id: Number, user_id: Number, chat_type: String}} identity
+ * @returns {Boolean}
+ */
+export function isPrivateChatIdentity(identity){
+	return identity?.chat_type === 'private';
+}
+
+/**
+ * Проверка, что текущий вызов идёт из личного чата с ботом.
+ * @param {?{chat_id: Number, user_id: Number, chat_type: String}} identity
+ * @param {String} operation
+ * @param {Boolean} [bWarn=true]
+ * @returns {Boolean}
+ */
+export function checkPrivateChat(identity, operation, bWarn = true){
+	const bPrivate = isPrivateChatIdentity(identity);
+	if(!bPrivate && bWarn){
+		logger.warn(`Операция ${operation} запрещена вне личного чата. chat_id=${identity?.chat_id}; user_id=${identity?.user_id}`).then();
+	}
+	return bPrivate;
+}
+
+/**
  * Удаление сообщения
  * @param {CTX}    ctx
  * @param {Number} [msg_id]

@@ -1,4 +1,5 @@
 import * as db       from './db.mjs';
+import * as logger   from './logger.mjs';
 import * as telegram from './telegram.mjs';
 import {json2string} from './utils.mjs';
 
@@ -94,6 +95,45 @@ export const removeUserFromChat2DB = async(chat_id, user_id) => db.query(`
               AND CHAT_ID = $2::BIGINT`,
 	[user_id, chat_id]
 );
+
+/**
+ * Проверка наличия родительских записей CHATS и USERS.
+ * @param {Number} chat_id
+ * @param {Number} user_id
+ * @param {Boolean} [bWarn=true]
+ * @returns {Promise<Boolean>}
+ */
+export async function checkUserChatExists(chat_id, user_id, bWarn = true){
+	if(!chat_id || !user_id){
+		if(bWarn){
+			logger.warn(`Пустой chat_id/user_id. chat_id=${chat_id}; user_id=${user_id}`).then();
+		}
+		return false;
+	}
+
+	const res = await db.query(
+		`SELECT EXISTS(SELECT 1 FROM CHATS WHERE ID = $1::BIGINT) AS CHAT_EXISTS,
+                EXISTS(SELECT 1 FROM USERS WHERE ID = $2::BIGINT) AS USER_EXISTS;`,
+		[chat_id, user_id]
+	);
+
+	if(!res){
+		if(bWarn){
+			logger.warn(`Не удалось проверить наличие CHATS/USERS. chat_id=${chat_id}; user_id=${user_id}`).then();
+		}
+		return false;
+	}
+
+	const row = res?.rows?.[0];
+	if(row?.chat_exists !== true || row?.user_exists !== true){
+		if(bWarn){
+			logger.warn(`Нет записи CHATS или USERS. chat_id=${chat_id}; user_id=${user_id}; chat_exists=${row?.chat_exists}; user_exists=${row?.user_exists}`).then();
+		}
+		return false;
+	}
+
+	return true;
+}
 
 /**
  * Получение статуса пользователя для конкретного чата
@@ -278,14 +318,73 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval = '
 		}
 	})?.filter(row => !!row)?.filter(mess => !!mess.content);
 
-export const getChatAISettings = async(ctx, ai_id, reasoner_mode, type) => db.query(`
+/**
+ * Получение AI-настроек по chat_id.
+ * @param {Number} chat_id
+ * @param {Number} ai_id
+ * @param {Boolean} reasoner_mode
+ * @param {?String} type
+ * @returns {Promise<*>}
+ */
+export const getChatAISettingsByChatId = async(chat_id, ai_id, reasoner_mode, type = null) => db.query(`
     SELECT TYPE, VALUE
     FROM AI2CHAT_SETTINGS
     WHERE CHAT_ID = $1::BIGINT
       AND AI_ID = $2::INT
       AND REASONER_MODE = $3::BOOL
       AND ($4::TEXT IS NULL OR TYPE = $4::TEXT)
-    ORDER BY TYPE;`, [telegram.getChatFromCtx(ctx)?.id, ai_id, !!reasoner_mode, type]);
+    ORDER BY TYPE;`, [chat_id, ai_id, !!reasoner_mode, type]);
+
+/**
+ * Получение AI-настроек для текущего ctx.
+ * @param {CTX} ctx
+ * @param {Number} ai_id
+ * @param {Boolean} reasoner_mode
+ * @param {?String} type
+ * @returns {Promise<*>}
+ */
+export const getChatAISettings = async(ctx, ai_id, reasoner_mode, type = null) =>
+	getChatAISettingsByChatId(telegram.getChatFromCtx(ctx)?.id, ai_id, !!reasoner_mode, type);
+
+/**
+ * Получение AI-настроек чата в виде объекта TYPE -> VALUE.
+ * @param {Number} chat_id
+ * @param {Number} ai_id
+ * @param {Boolean} reasoner_mode
+ * @param {?String[]} [types=null]
+ * @param {Object} [defaults={}]
+ * @returns {Promise<Object>}
+ */
+export async function getChatAISettingsMapByChatId(chat_id, ai_id, reasoner_mode, types = null, defaults = {}){
+	const res = await db.query(`
+        SELECT TYPE, VALUE
+        FROM AI2CHAT_SETTINGS
+        WHERE CHAT_ID = $1::BIGINT
+          AND AI_ID = $2::INT
+          AND REASONER_MODE = $3::BOOL
+          AND ($4::TEXT[] IS NULL OR TYPE = ANY($4::TEXT[]))
+        ORDER BY TYPE;`, [chat_id, ai_id, !!reasoner_mode, Array.isArray(types) && types.length > 0 ? types : null]);
+
+	if(!res){
+		return {...defaults};
+	}
+
+	const settings = {...defaults};
+	res.rows?.forEach(row => settings[row.type] = row.value);
+	return settings;
+}
+
+/**
+ * Получение AI-настроек текущего ctx в виде объекта TYPE -> VALUE.
+ * @param {CTX} ctx
+ * @param {Number} ai_id
+ * @param {Boolean} reasoner_mode
+ * @param {?String[]} [types=null]
+ * @param {Object} [defaults={}]
+ * @returns {Promise<Object>}
+ */
+export const getChatAISettingsMap = async(ctx, ai_id, reasoner_mode, types = null, defaults = {}) =>
+	getChatAISettingsMapByChatId(telegram.getChatFromCtx(ctx)?.id, ai_id, !!reasoner_mode, types, defaults);
 
 export const setChatAISettings = async(ctx, ai_id, reasoner_mode, type, value) => db.query(`
     INSERT INTO AI2CHAT_SETTINGS (CHAT_ID, AI_ID, TYPE, REASONER_MODE, VALUE)

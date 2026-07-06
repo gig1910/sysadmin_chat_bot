@@ -39,6 +39,33 @@ export function stripJsonFence(content){
 }
 
 /**
+ * Строгое чтение boolean-настройки из текстового значения.
+ * @param {?String} value
+ * @param {Boolean} default_value
+ * @param {Function} [on_invalid]
+ * @returns {Boolean}
+ */
+export function parseBoolSetting(value, default_value = false, on_invalid = null){
+	if(value == null){
+		return default_value;
+	}
+
+	const normalized = String(value).trim().toLowerCase();
+	if(normalized === 'true'){
+		return true;
+	}
+
+	if(normalized === 'false'){
+		return false;
+	}
+
+	if(typeof on_invalid === 'function'){
+		on_invalid(value);
+	}
+	return false;
+}
+
+/**
  * Безопасная сериализация в JSON-строку.
  * Защищает от циклических ссылок, BigInt, function и symbol.
  * @param {*} value

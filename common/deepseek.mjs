@@ -367,21 +367,12 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 		// Получаем блок настроек для чата/AI (Если сознательно не передали свой)
 		let temperature = 1;
 		if(!systemPrompt){
-			(await telegram_db.getChatAISettings(ctx, ai_id, !!analyse))
-				?.rows?.map(row => {
-				switch(row.type){
-					case 'SYSTEM_PROMPT':
-						systemPrompt = row.value;
-						break;
-
-					case 'TEMPERATURE':
-						temperature = parseFloat(row.value);
-						if(!Number.isFinite(temperature)){
-							temperature = analyse ? 1 : 0.85;
-						}
-						break;
-				}
-			});
+			const settings = await telegram_db.getChatAISettingsMap(ctx, ai_id, !!analyse);
+			systemPrompt = settings.SYSTEM_PROMPT;
+			temperature  = parseFloat(settings.TEMPERATURE);
+			if(!Number.isFinite(temperature)){
+				temperature = analyse ? 1 : 0.85;
+			}
 		}
 
 		const useTools = isAIToolsAllowedForQuery(queryType);
@@ -604,8 +595,8 @@ export async function isSpamMessage(ctx){
 		logger.log(`Тест сообщения на спам '${message}'`).then();
 
 		const _messages = [{role: 'user', content: message}];
-
-		const spamPrompt = (await telegram_db.getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
+		const settings = await telegram_db.getChatAISettingsMap(ctx, AI_ID, false, ['TEST_SPAM_PROMPT']);
+		const spamPrompt = settings.TEST_SPAM_PROMPT ||
 		                   'Check the message and answer only YES or NO if the message looks like SPAM';
 		const _answer    = await sendMessages2AI(ctx, AI_ID, _messages, chat?.id, false, IS_SPAM, spamPrompt);
 
@@ -634,7 +625,8 @@ export async function testMessage(ctx){
 		if(arr?.[1]){
 			const _messages = [{role: 'user', content: arr[1]}];
 
-			const spamPrompt = (await telegram_db.getChatAISettings(ctx, AI_ID, false, 'TEST_SPAM_PROMPT'))?.rows?.[0]?.value ||
+			const settings = await telegram_db.getChatAISettingsMap(ctx, AI_ID, false, ['TEST_SPAM_PROMPT']);
+			const spamPrompt = settings.TEST_SPAM_PROMPT ||
 			                   'Check the message and answer only YES or NO if the message looks like SPAM';
 			const _answer    = await sendMessages2AI(ctx, AI_ID, _messages, chat?.id, false, IS_TEST_MESSAGE, spamPrompt);
 
@@ -669,8 +661,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 			if(text){
 
 				// Получаем настройки чата из БД
-				const aiSettings = {};
-				(await telegram_db.getChatAISettings(ctx, AI_ID, !!analyse))?.rows?.map(el => aiSettings[el?.type] = el?.value);
+				const aiSettings = await telegram_db.getChatAISettingsMap(ctx, AI_ID, !!analyse);
 
 				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
 				await telegram_db.addMessage2DB(ctx, chat, user, message).catch(console.error);
@@ -765,7 +756,8 @@ export const deepSeekSummary = async(ctx) => {
 				// Получаем историю сообщений
 				const messages = await telegram_db.getMessagesFromChatByInterval(message.chat?.id, ctx?.botInfo?.id, interval);
 				if(messages?.length > 0){
-					const summaryPrompt = (await telegram_db.getChatAISettings(ctx, AI_ID, false, 'SUMMARY_PROMPT'))?.rows?.[0]?.value;
+					const settings = await telegram_db.getChatAISettingsMap(ctx, AI_ID, false, ['SUMMARY_PROMPT']);
+					const summaryPrompt = settings.SUMMARY_PROMPT;
 					if(summaryPrompt){
 						// Уведомляем, что получили запрос и начали готовить ответ
 						const _waitMessage = await showWaitMessage(ctx);
