@@ -42,10 +42,21 @@ Do not store secrets, credentials, private keys, addresses, phone numbers, medic
 
 export const AI_ID = 1;
 
+/**
+ * Проверка, можно ли использовать AI tools для данного типа запроса.
+ * @param {Number} queryType
+ * @returns {Boolean}
+ */
 function isAIToolsAllowedForQuery(queryType){
 	return [IS_MESSAGE, IS_SUMMARY_MESSAGE].includes(queryType);
 }
 
+/**
+ * Сборка итогового system prompt с техническими инструкциями.
+ * @param {?String} systemPrompt
+ * @param {Boolean} useTools
+ * @returns {String}
+ */
 function buildSystemPrompt(systemPrompt, useTools){
 	const parts = [];
 	const prompt = String(systemPrompt || '').trim();
@@ -64,6 +75,11 @@ function buildSystemPrompt(systemPrompt, useTools){
 	return parts.join('\n\n').trim();
 }
 
+/**
+ * Формирование assistant-сообщения с tool_calls для продолжения tool-loop.
+ * @param {Object} answer
+ * @returns {{role: String, content: *, tool_calls: *}}
+ */
 function toolCallMessage(answer){
 	return {
 		role:       'assistant',
@@ -72,6 +88,11 @@ function toolCallMessage(answer){
 	};
 }
 
+/**
+ * Преобразование строки истории диалога из БД в AI message.
+ * @param {Object} row
+ * @returns {?{role: String, name: ?String, content: String}}
+ */
 function makeDialogueContextMessage(row){
 	if(!row?.content){
 		return null;
@@ -91,6 +112,11 @@ function makeDialogueContextMessage(row){
 	};
 }
 
+/**
+ * Нормализация Telegram quote из сообщения.
+ * @param {Object} quote
+ * @returns {?Object}
+ */
 function normalizeTelegramQuote(quote){
 	if(!quote?.text){
 		return null;
@@ -115,6 +141,12 @@ function normalizeTelegramQuote(quote){
 	return result;
 }
 
+/**
+ * Формирование дополнительного AI-сообщения по выделенной Telegram quote.
+ * @param {Object} message
+ * @param {Object} user
+ * @returns {?{role: String, name: ?String, content: String}}
+ */
 function makeQuotePromptMessage(message, user){
 	const quote = normalizeTelegramQuote(message?.quote);
 	if(!quote){
@@ -142,12 +174,22 @@ function makeQuotePromptMessage(message, user){
 	return prompt;
 }
 
+/**
+ * Удаление Markdown code-fence вокруг JSON-ответа.
+ * @param {*} content
+ * @returns {String}
+ */
 function stripJsonFence(content){
 	const text = String(content || '').trim();
 	const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
 	return match ? match[1].trim() : text;
 }
 
+/**
+ * Проверка, что значение похоже на OpenAI chat message.
+ * @param {*} value
+ * @returns {Boolean}
+ */
 function isChatMessageLike(value){
 	return Boolean(
 		value &&
@@ -157,6 +199,11 @@ function isChatMessageLike(value){
 	);
 }
 
+/**
+ * Нормализация ответа AI: разворачивает ошибочно возвращённые JSON-обёртки chat-message.
+ * @param {Object|String} answer
+ * @returns {String}
+ */
 function normalizeAnswerContent(answer){
 	let content = typeof answer === 'string' ? answer : answer?.content;
 	if(content == null){
@@ -236,6 +283,13 @@ function stringifyToolResult(result){
 	}
 }
 
+/**
+ * Вызов запрошенных AI tools и добавление tool-сообщений в текущий message list.
+ * @param {CTX} ctx
+ * @param {Object[]} messages
+ * @param {Object[]} toolCalls
+ * @returns {Promise<void>}
+ */
 async function callToolsAndAppendMessages(ctx, messages, toolCalls){
 	for(const toolCall of toolCalls){
 		const toolName = toolCall?.function?.name;
@@ -273,6 +327,13 @@ async function callToolsAndAppendMessages(ctx, messages, toolCalls){
 	}
 }
 
+/**
+ * Выполнение AI completion с поддержкой tool-loop.
+ * @param {CTX} ctx
+ * @param {Object} aiParams
+ * @param {Boolean} useTools
+ * @returns {Promise<{completion: Object, answer: Object}>}
+ */
 async function createCompletionWithTools(ctx, aiParams, useTools){
 	let completion;
 	let answer;
@@ -610,8 +671,6 @@ export const deepSeekTalks = async(ctx, analyse) => {
 	}
 
 	const message = telegram.getCtxMessage(ctx);
-	console.log('message');
-	console.log(message);
 	if(message && message?.message_id && message?.text){
 		// Очистка запроса от текста команды
 		const botInfo = ctx?.botInfo;
@@ -620,10 +679,6 @@ export const deepSeekTalks = async(ctx, analyse) => {
 			const user = message.from;
 
 			const text = message.text.replace(/^\/deepseek(?:_analyse)?(?:@\w+)?\s+/igm, '').trim();
-			console.log('message.text');
-			console.log(message.text);
-			console.log('text');
-			console.log(text);
 			if(text){
 
 				// Получаем настройки чата из БД
@@ -642,9 +697,6 @@ export const deepSeekTalks = async(ctx, analyse) => {
 				if(quotePromptMessage && messages){
 					messages.push(quotePromptMessage);
 				}
-
-				console.log('messages');
-				console.log(messages);
 
 				if(messages?.length > 0){
 					// Уведомляем, что получили запрос и начали готовить ответ
