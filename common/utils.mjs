@@ -15,6 +15,30 @@ export function isPlainObject(value){
 }
 
 /**
+ * Проверка, что значение похоже на OpenAI-compatible chat message.
+ * @param {*} value
+ * @returns {Boolean}
+ */
+export function isChatMessageLike(value){
+	return Boolean(
+		isPlainObject(value) &&
+		['assistant', 'user', 'system', 'tool'].includes(value.role) &&
+		typeof value.content === 'string'
+	);
+}
+
+/**
+ * Удаление Markdown code-fence вокруг JSON-строки.
+ * @param {*} content
+ * @returns {String}
+ */
+export function stripJsonFence(content){
+	const text = String(content || '').trim();
+	const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+	return match ? match[1].trim() : text;
+}
+
+/**
  * Безопасная сериализация в JSON-строку.
  * Защищает от циклических ссылок, BigInt, function и symbol.
  * @param {*} value
