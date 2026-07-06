@@ -1,8 +1,8 @@
 import * as logger      from './logger.mjs';
 import * as telegram    from './telegram.mjs';
-import * as telegram_db from "./telegram_db.mjs";
+import * as telegram_db from './telegram_db.mjs';
 import * as deepseek    from './deepseek.mjs';
-import {isAIAllowed}    from "./deepseek.mjs";
+import {isAIAllowed}    from './deepseek.mjs';
 
 const AI_BOOLEAN_SETTINGS_TYPES = new Set([
 	'USER_MEMORY_ENABLED',
@@ -21,7 +21,6 @@ const AI_MEMORY_SETTINGS_TYPES  = new Set([
 	'USER_MEMORY_ENABLED',
 	'USER_CHARACTERISTICS_ENABLED'
 ]);
-
 
 /**
  * Гарантирует наличие базовых записей чата/пользователя перед работой с AI2CHAT_SETTINGS.
@@ -108,15 +107,13 @@ function getSetAISettingsUsage(){
 Для USER_MEMORY_ENABLED и USER_CHARACTERISTICS_ENABLED значение должно быть только true/false. Режим MODE для этих настроек принудительно считается false, так как память читается из обычного режима чата.`;
 }
 
-
 /**
- * Регистрация команд управления памятью и характеристиками пользователя.
- * Явный вывод/редактирование/удаление разрешены только в личном чате.
+ * Регистрация команд AI и команд управления AI-настройками текущего чата.
  * @param {*} bot
  * @returns {void}
  */
 export function registerAICommands(bot){
-	if(deepseek.isAIAllowed){
+	if(isAIAllowed()){
 		bot?.command('deepseek_test_spam', async(ctx) => {
 			let res;
 
