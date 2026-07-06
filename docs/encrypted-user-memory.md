@@ -131,7 +131,7 @@ The sanitizer also redacts common secret-like strings from ordinary user message
 Implemented in `common/ai_memory_tools.mjs`:
 
 - `get_user_memory` — private chat only.
-- `set_user_memory` — private chat only.
+- `set_user_memory` — system tool, can append memory for the current user in the current chat, including group chats.
 - `delete_user_memory` — private chat only.
 - `get_user_characteristics` — private chat only.
 - `patch_user_characteristics` — system tool, can update the current user in the current chat.
