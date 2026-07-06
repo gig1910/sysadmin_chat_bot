@@ -458,7 +458,6 @@ export async function sendMessages2AI(ctx, ai_id, messages, chat_id, analyse, qu
 	}
 }
 
-
 /**
  * Отображение уведомления? что ответ у АИ запрошен
  * @param {CTX} ctx
@@ -537,7 +536,6 @@ async function sendAnswerIA(ctx, answer){
 					}
 				});
 			});
-
 
 		}else{ // Нет ответа, т.к. ошибка
 			mess = await telegram.replyMessage(ctx, message?.message_id, 'Ошибка при запросе у DeepSeek.\nПовторите запрос позднее...', true);
@@ -665,7 +663,7 @@ export const deepSeekTalks = async(ctx, analyse) => {
 			const chat = message.chat;
 			const user = message.from;
 
-			const text = message.text.replace(/^\/deepseek(?:_analyse)?(?:@\w+)?\s+/igm, '').trim();
+			const text = message.text.replace(/^\/deepseek(?:_analyse)?(?:@\w+)?\s*/igm, '').trim();
 			if(text){
 
 				// Получаем настройки чата из БД
@@ -734,9 +732,14 @@ export const deepSeekSummary = async(ctx) => {
 				const arr  = re.exec(text);
 				let amount = 2;
 				let period = 'h';
-				if(arr?.length){
+				if(arr?.[1] && arr?.[2]){
 					amount = parseInt(arr[1], 10);
 					period = arr[2].toLowerCase();
+				}
+
+				if(!Number.isFinite(amount) || amount <= 0){
+					amount = 2;
+					period = 'h';
 				}
 
 				let interval;
@@ -755,8 +758,7 @@ export const deepSeekSummary = async(ctx) => {
 						break;
 				}
 
-				const add_query = (arr[3] ?? '').replace(/\\n/igm, '\n');
-
+				const add_query = (arr?.[3] ?? '').replace(/\\n/igm, '\n');
 
 				// Сохраняем сообщение (Тут надо дождаться, чтобы из БД получить сразу весь диалог, включая ЭТО сообщение)
 				await telegram_db.addMessage2DB(ctx, chat, user, message).catch(console.error);
