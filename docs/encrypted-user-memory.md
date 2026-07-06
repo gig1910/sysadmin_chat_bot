@@ -13,43 +13,42 @@ The data is not designed for querying. There is no task like "find all users wit
 
 ```text
 select by CHAT_ID + USER_ID
-→ decrypt in bot RAM
+→ decrypt through PostgreSQL pgcrypto
 → mix into AI request as private low-priority context
 → redact before logs and AI_REQUEST
 ```
 
 ## Storage model
 
-Tables store only encrypted opaque JSON envelopes:
+Tables store only encrypted `BYTEA` values:
 
 ```sql
-USER_MEMORY(CHAT_ID, USER_ID, DATA_ENC JSONB, VERSION, ENABLED, CREATED_AT, UPDATED_AT)
-USER_CHARACTERISTICS(CHAT_ID, USER_ID, DATA_ENC JSONB, VERSION, ENABLED, CREATED_AT, UPDATED_AT)
-```
-
-`DATA_ENC` format:
-
-```json
-{
-  "v": 1,
-  "alg": "AES-256-GCM",
-  "kid": "memory-key-v1",
-  "iv": "base64",
-  "tag": "base64",
-  "data": "base64"
-}
+USER_MEMORY(CHAT_ID, USER_ID, DATA_ENC BYTEA, VERSION, ENABLED, CREATED_AT, UPDATED_AT)
+USER_CHARACTERISTICS(CHAT_ID, USER_ID, DATA_ENC BYTEA, VERSION, ENABLED, CREATED_AT, UPDATED_AT)
 ```
 
 No plaintext memory or characteristics are indexed or searched.
 
 ## Encryption
 
-Implemented in `common/private_crypto.mjs`.
+Encryption is done by PostgreSQL `pgcrypto`, not by Node.js.
 
-Key derivation:
+The bot sends plaintext JSON and `AI_MEMORY_MASTER_KEY` as SQL parameters. PostgreSQL derives a per chat-user-context symmetric key in SQL:
 
 ```text
-HKDF-SHA256(master_key, salt, info = context_type:chat_id:user_id, length = 32)
+ENCODE(DIGEST(master_key || ':' || chat_id || ':' || user_id || ':' || context_type, 'sha256'), 'hex')
+```
+
+Then PostgreSQL stores:
+
+```sql
+PGP_SYM_ENCRYPT(json_text, derived_key, 'cipher-algo=aes256, compress-algo=1')
+```
+
+And reads:
+
+```sql
+PGP_SYM_DECRYPT(DATA_ENC, derived_key)::JSONB
 ```
 
 Recommended key generation:
@@ -63,11 +62,22 @@ openssl rand -base64 32
 ```env
 AI_MEMORY_ENABLED=true
 AI_MEMORY_MASTER_KEY=
-AI_MEMORY_KEY_ID=memory-key-v1
 AI_MEMORY_MAX_PROMPT_CHARS=2500
 ```
 
 `AI_MEMORY_MASTER_KEY` must stay outside the database. A database dump alone should not reveal memory contents.
+
+## SQL migration
+
+Use:
+
+```bash
+psql --file=SQL/USER_MEMORY_PGCRYPTO.sql
+```
+
+The migration file creates `pgcrypto` and the `BYTEA`-based memory tables.
+
+If an earlier test version already created `USER_MEMORY` / `USER_CHARACTERISTICS` with `DATA_ENC JSONB`, recreate these test tables before applying the migration, because the old Node-side encrypted JSON envelope is not compatible with pgcrypto `BYTEA` storage.
 
 ## AI request handling
 
