@@ -96,7 +96,7 @@ Private memory is attached to AI messages with internal fields:
 ```js
 {
   role: 'system',
-  content: 'Private low-priority user context ...',
+  content: 'PRIVATE_CONTEXT_JSON follows ...',
   private_context: true,
   private_context_type: 'user_memory'
 }
@@ -143,6 +143,34 @@ Getter tool results are internal background context only. AI responses must not 
 
 The model never receives or controls `chat_id`/`user_id`. The current Telegram `ctx` defines the only allowed scope. If several users need recalculation, each user must be processed by a separate call in its own Telegram context.
 
+## Private-chat commands
+
+Command handlers are implemented in `common/memory_commands.mjs`:
+
+- `/memory` — list memory items and show inline buttons for each item.
+- `/memory_edit MEMORY_ID new text` — edit one memory item.
+- `/memory_delete MEMORY_ID` — delete one memory item.
+- `/memory_forget` — clear all memory for the current private chat-user pair.
+- `/characteristics` — display characteristics for the current private chat-user pair.
+- `/characteristics_reset` — clear characteristics for the current private chat-user pair.
+
+`/memory` sends each memory item with inline buttons:
+
+```text
+✏️ Изменить
+🗑 Удалить
+```
+
+The button handlers still enforce private-chat access before reading or changing data.
+
+To enable the command module from `index.mjs`, register it after `telegram.bot` is initialized:
+
+```js
+import {registerMemoryCommands} from './common/memory_commands.mjs';
+
+registerMemoryCommands(telegram.bot);
+```
+
 ## Safety rules
 
 System prompt remains higher priority than memory.
@@ -178,14 +206,7 @@ The current branch provides the schema and internal `queueUserCharacteristicsRec
 
 ## Not yet implemented
 
-- Private-chat Telegram commands for memory management:
-  - `/memory`
-  - `/memory_chats`
-  - `/memory_export`
-  - `/memory_forget`
-  - `/characteristics`
-  - `/characteristics_reset`
+- `/memory_chats`
+- `/memory_export`
 - Background worker that consumes `USER_MEMORY_RECALC_QUEUE`.
 - Manual confirmation UX for sensitive explicit memory.
-
-These should be separate PRs because they touch Telegram command routing and user-facing privacy controls.
