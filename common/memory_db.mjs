@@ -2,6 +2,7 @@ import * as db       from './db.mjs';
 import * as logger   from './logger.mjs';
 import * as telegram from './telegram.mjs';
 import {hasLikelySecret, redactSecrets} from './private_context_sanitizer.mjs';
+import {deepMerge, isPlainObject, json2string} from './utils.mjs';
 
 const AI_MEMORY_ENABLED                    = process.env.AI_MEMORY_ENABLED === 'true';
 const AI_MEMORY_MASTER_KEY                 = process.env.AI_MEMORY_MASTER_KEY || '';
@@ -22,45 +23,15 @@ const DANGEROUS_JSON_KEYS                  = new Set(['__proto__', 'prototype', 
 const MAX_MERGE_DEPTH                      = 16;
 
 /**
- * Сериализация объекта в строку JSON для передачи в PostgreSQL.
- * Защищает от циклических ссылок, BigInt, function и symbol.
- * @param {*} value
- * @returns {String}
+ * Опции безопасного merge для пользовательских характеристик.
+ * @returns {{max_depth: Number, dangerous_keys: Set<String>, on_skip_key: Function}}
  */
-function json2string(value){
-	const seen = new WeakSet();
-	return JSON.stringify(value ?? {}, (key, child) => {
-		if(typeof child === 'bigint'){
-			return child.toString();
-		}
-
-		if(typeof child === 'function' || typeof child === 'symbol'){
-			return undefined;
-		}
-
-		if(child && typeof child === 'object'){
-			if(seen.has(child)){
-				return '[Circular]';
-			}
-			seen.add(child);
-		}
-
-		return child;
-	}, '');
-}
-
-/**
- * Проверка, что значение является простым JSON-объектом.
- * @param {*} value
- * @returns {Boolean}
- */
-function isPlainObject(value){
-	if(!value || typeof value !== 'object' || Array.isArray(value)){
-		return false;
-	}
-
-	const proto = Object.getPrototypeOf(value);
-	return proto === Object.prototype || proto === null;
+function getCharacteristicsMergeOptions(){
+	return {
+		max_depth: MAX_MERGE_DEPTH,
+		dangerous_keys: DANGEROUS_JSON_KEYS,
+		on_skip_key: key => logger.warn(`Пропущен опасный ключ characteristics patch: ${key}`).then()
+	};
 }
 
 /**
@@ -633,7 +604,7 @@ async function getUserCharacteristicsForUpdate(ctx){
  * @returns {Object}
  */
 function normalizeMemoryItem(args){
-	const data = args?.data && typeof args.data === 'object' && !Array.isArray(args.data) ? args.data : {};
+	const data = args?.data && isPlainObject(args.data) ? args.data : {};
 	const text = String(args?.text || args?.content || data.text || '').trim();
 
 	if(!text && Object.keys(data).length === 0){
@@ -705,45 +676,6 @@ export async function setUserMemory(ctx, args){
 }
 
 /**
- * Безопасное слияние JSON-объектов с защитой от циклов и опасных ключей.
- * @param {Object} target
- * @param {Object} patch
- * @param {WeakSet} [seen]
- * @param {Number} [depth]
- * @returns {Object}
- */
-function deepMerge(target, patch, seen = new WeakSet(), depth = 0){
-	if(depth > MAX_MERGE_DEPTH){
-		throw new Error('Превышена максимальная глубина merge пользовательских характеристик.');
-	}
-
-	if(!patch || typeof patch !== 'object' || Array.isArray(patch)){
-		return target;
-	}
-
-	if(seen.has(patch)){
-		throw new Error('Обнаружена циклическая ссылка в patch пользовательских характеристик.');
-	}
-	seen.add(patch);
-
-	const result = {...(target && typeof target === 'object' && !Array.isArray(target) ? target : {})};
-	for(const [key, value] of Object.entries(patch)){
-		if(DANGEROUS_JSON_KEYS.has(key)){
-			logger.warn(`Пропущен опасный ключ characteristics patch: ${key}`).then();
-			continue;
-		}
-
-		if(value && typeof value === 'object' && !Array.isArray(value)){
-			result[key] = deepMerge(result[key], value, seen, depth + 1);
-		}else{
-			result[key] = value;
-		}
-	}
-	seen.delete(patch);
-	return result;
-}
-
-/**
  * Обновление кумулятивных характеристик пользователя.
  * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
  * @param {CTX} ctx
@@ -761,7 +693,7 @@ export async function patchUserCharacteristics(ctx, args){
 		return {ok: false, error: 'explicit_identity_forbidden'};
 	}
 
-	const patch = args?.patch && typeof args.patch === 'object' && !Array.isArray(args.patch) ? args.patch : null;
+	const patch = isPlainObject(args?.patch) ? args.patch : null;
 	if(!patch || Object.keys(patch).length === 0){
 		return {ok: false, error: 'empty_patch'};
 	}
@@ -777,7 +709,7 @@ export async function patchUserCharacteristics(ctx, args){
 
 	let profile;
 	try{
-		profile = deepMerge(current.data?.profile || {}, patch);
+		profile = deepMerge(current.data?.profile || {}, patch, getCharacteristicsMergeOptions());
 	}catch(err){
 		logger.warn(err).then();
 		return {ok: false, error: 'invalid_patch'};
@@ -815,7 +747,7 @@ export async function recalculateUserCharacteristics(ctx, args){
 		return {ok: false, error: 'explicit_identity_forbidden'};
 	}
 
-	const profile = args?.profile && isPlainObject(args.profile) ? args.profile : null;
+	const profile = isPlainObject(args?.profile) ? args.profile : null;
 	if(!profile || Object.keys(profile).length === 0){
 		return {ok: false, error: 'empty_profile'};
 	}
@@ -826,7 +758,7 @@ export async function recalculateUserCharacteristics(ctx, args){
 
 	let safe_profile;
 	try{
-		safe_profile = deepMerge({}, profile);
+		safe_profile = deepMerge({}, profile, getCharacteristicsMergeOptions());
 	}catch(err){
 		logger.warn(err).then();
 		return {ok: false, error: 'invalid_profile'};
