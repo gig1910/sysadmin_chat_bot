@@ -5,7 +5,7 @@ import * as telegram  from './telegram.mjs';
 import * as tg_db     from './telegram_db.mjs';
 import * as memory_db from './memory_db.mjs';
 import {json2string}  from './utils.mjs';
-import * as ai_memory_tools from "./ai_memory_tools.mjs";
+import * as ai_memory_tools from './ai_memory_tools.mjs';
 
 /**
  * Гарантирует наличие текущих CHAT/USER перед операциями с приватной памятью.
@@ -102,7 +102,6 @@ async function sendMemoryManager(ctx){
  * @returns {void}
  */
 export function registerMemoryCommands(bot){
-
 	if(ai_memory_tools.isUserMemoryDataEnabled()){
 		bot?.command('memory', async(ctx) => sendMemoryManager(ctx));
 
@@ -152,27 +151,6 @@ export function registerMemoryCommands(bot){
 			return telegram.sendMessage(ctx, res.ok === true ? 'Память очищена.' : `Не удалось очистить память: ${res.error || 'unknown_error'}`, false);
 		});
 
-		bot?.command('characteristics', async(ctx) => {
-			if(!await requirePrivateBotCommand(ctx, '/characteristics')){
-				return;
-			}
-
-			const res = await memory_db.getUserCharacteristicsPrivate(ctx);
-			if(res.enabled !== true){
-				return telegram.sendMessage(ctx, `Характеристики недоступны: ${res.reason || 'unknown_error'}`, false);
-			}
-			return telegram.sendMessage(ctx, json2string(res.data, 2) || '{}', false);
-		});
-
-		bot?.command('characteristics_reset', async(ctx) => {
-			if(!await requirePrivateBotCommand(ctx, '/characteristics_reset')){
-				return;
-			}
-
-			const res = await memory_db.deleteUserCharacteristics(ctx);
-			return telegram.sendMessage(ctx, res.ok === true ? 'Характеристики очищены.' : `Не удалось очистить характеристики: ${res.error || 'unknown_error'}`, false);
-		});
-
 		bot?.action(/memory_edit:(.+)/, async(ctx) => {
 			if(!await requirePrivateBotCommand(ctx, 'memory_edit')){
 				return ctx.answerCbQuery('Только личный чат.');
@@ -195,6 +173,29 @@ export function registerMemoryCommands(bot){
 				return ctx.editMessageText('Запись памяти удалена.');
 			}
 			return telegram.sendMessage(ctx, `Не удалось удалить запись памяти: ${res.error || 'unknown_error'}`, false);
+		});
+	}
+
+	if(ai_memory_tools.isUserCharacteristicsEnabled()){
+		bot?.command('characteristics', async(ctx) => {
+			if(!await requirePrivateBotCommand(ctx, '/characteristics')){
+				return;
+			}
+
+			const res = await memory_db.getUserCharacteristicsPrivate(ctx);
+			if(res.enabled !== true){
+				return telegram.sendMessage(ctx, `Характеристики недоступны: ${res.reason || 'unknown_error'}`, false);
+			}
+			return telegram.sendMessage(ctx, json2string(res.data, 2) || '{}', false);
+		});
+
+		bot?.command('characteristics_reset', async(ctx) => {
+			if(!await requirePrivateBotCommand(ctx, '/characteristics_reset')){
+				return;
+			}
+
+			const res = await memory_db.deleteUserCharacteristics(ctx);
+			return telegram.sendMessage(ctx, res.ok === true ? 'Характеристики очищены.' : `Не удалось очистить характеристики: ${res.error || 'unknown_error'}`, false);
 		});
 	}
 }
