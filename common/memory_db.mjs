@@ -1,28 +1,11 @@
 import {randomUUID} from 'node:crypto';
 
-import * as db       from './db.mjs';
-import * as logger   from './logger.mjs';
-import * as telegram from './telegram.mjs';
-import {hasLikelySecret, redactSecrets} from './private_context_sanitizer.mjs';
+import * as db                                 from './db.mjs';
+import * as logger                             from './logger.mjs';
+import * as telegram                           from './telegram.mjs';
+import {hasLikelySecret, redactSecrets}        from './private_context_sanitizer.mjs';
 import {deepMerge, isPlainObject, json2string} from './utils.mjs';
-
-const AI_MEMORY_ENABLED                    = process.env.AI_MEMORY_ENABLED === 'true';
-const AI_MEMORY_MASTER_KEY                 = process.env.AI_MEMORY_MASTER_KEY || '';
-const AI_MEMORY_MASTER_KEY_CONFIGURED      = AI_MEMORY_MASTER_KEY.trim().length > 0;
-const AI_USER_MEMORY_ENABLED               = AI_MEMORY_ENABLED && (process.env.AI_USER_MEMORY_ENABLED ?? 'true') === 'true';
-const AI_USER_CHARACTERISTICS_ENABLED      = AI_MEMORY_ENABLED && (process.env.AI_USER_CHARACTERISTICS_ENABLED ?? 'true') === 'true';
-const USER_MEMORY_ENABLED                  = AI_USER_MEMORY_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
-const USER_CHARACTERISTICS_ENABLED         = AI_USER_CHARACTERISTICS_ENABLED && AI_MEMORY_MASTER_KEY_CONFIGURED;
-const USER_MEMORY_DISABLED_REASON          = !AI_MEMORY_ENABLED ? 'memory_disabled' : (!AI_USER_MEMORY_ENABLED ? 'user_memory_disabled' : (!AI_MEMORY_MASTER_KEY_CONFIGURED ? 'encryption_key_not_configured' : null));
-const USER_CHARACTERISTICS_DISABLED_REASON = !AI_MEMORY_ENABLED ? 'memory_disabled' : (!AI_USER_CHARACTERISTICS_ENABLED ? 'user_characteristics_disabled' : (!AI_MEMORY_MASTER_KEY_CONFIGURED ? 'encryption_key_not_configured' : null));
-const AI_MEMORY_AI_ID                      = Number.parseInt(process.env.AI_MEMORY_AI_ID || '1', 10) || 1;
-const AI_MEMORY_MAX_PROMPT_CHARS           = Math.max(500, Number.parseInt(process.env.AI_MEMORY_MAX_PROMPT_CHARS || '2500', 10));
-const CONTEXT_TYPE_MEMORY                  = 'user_memory';
-const CONTEXT_TYPE_CHARACTERISTICS         = 'user_characteristics';
-const SETTING_USER_MEMORY_ENABLED          = 'USER_MEMORY_ENABLED';
-const SETTING_USER_CHARACTERISTICS_ENABLED = 'USER_CHARACTERISTICS_ENABLED';
-const DANGEROUS_JSON_KEYS                  = new Set(['__proto__', 'prototype', 'constructor']);
-const MAX_MERGE_DEPTH                      = 16;
+import * as ai_memory_tools                    from './ai_memory_tools.mjs';
 
 /**
  * Опции безопасного merge для пользовательских характеристик.
@@ -30,26 +13,19 @@ const MAX_MERGE_DEPTH                      = 16;
  */
 function getCharacteristicsMergeOptions(){
 	return {
-		max_depth: MAX_MERGE_DEPTH,
-		dangerous_keys: DANGEROUS_JSON_KEYS,
-		on_skip_key: key => logger.warn(`Пропущен опасный ключ characteristics patch: ${key}`).then()
+		max_depth:      ai_memory_tools.MAX_MERGE_DEPTH,
+		dangerous_keys: ai_memory_tools.DANGEROUS_JSON_KEYS,
+		on_skip_key:    key => logger.warn(`Пропущен опасный ключ characteristics patch: ${key}`).then()
 	};
 }
 
-/**
- * Проверка доступности хранения user-memory.
- * @returns {Boolean}
- */
-export function isUserMemoryDataEnabled(){
-	return USER_MEMORY_ENABLED;
-}
 
 /**
  * Проверка доступности хранения user-characteristics.
  * @returns {Boolean}
  */
 export function isUserCharacteristicsEnabled(){
-	return USER_CHARACTERISTICS_ENABLED;
+	return ai_memory_tools.USER_CHARACTERISTICS_ENABLED;
 }
 
 /**
@@ -57,7 +33,7 @@ export function isUserCharacteristicsEnabled(){
  * @returns {Boolean}
  */
 export function isPrivateContextEnabled(){
-	return USER_MEMORY_ENABLED || USER_CHARACTERISTICS_ENABLED;
+	return ai_memory_tools.USER_MEMORY_ENABLED || ai_memory_tools.USER_CHARACTERISTICS_ENABLED;
 }
 
 /**
@@ -108,11 +84,11 @@ function checkPrivateChat(identity, operation, bWarn = true){
  */
 function getGlobalContextState(context_type){
 	switch(context_type){
-		case CONTEXT_TYPE_MEMORY:
-			return {enabled: USER_MEMORY_ENABLED, reason: USER_MEMORY_DISABLED_REASON};
+		case ai_memory_tools.CONTEXT_TYPE_MEMORY:
+			return {enabled: ai_memory_tools.USER_MEMORY_ENABLED, reason: ai_memory_tools.USER_MEMORY_DISABLED_REASON};
 
-		case CONTEXT_TYPE_CHARACTERISTICS:
-			return {enabled: USER_CHARACTERISTICS_ENABLED, reason: USER_CHARACTERISTICS_DISABLED_REASON};
+		case ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS:
+			return {enabled: ai_memory_tools.USER_CHARACTERISTICS_ENABLED, reason: ai_memory_tools.USER_CHARACTERISTICS_DISABLED_REASON};
 
 		default:
 			return {enabled: false, reason: 'unknown_context_type'};
@@ -191,13 +167,13 @@ async function getChatPrivateContextSettings(chat_id){
            AND AI_ID = $2::INT
            AND REASONER_MODE IS FALSE
            AND TYPE IN ($3::TEXT, $4::TEXT);`,
-		[chat_id, AI_MEMORY_AI_ID, SETTING_USER_MEMORY_ENABLED, SETTING_USER_CHARACTERISTICS_ENABLED]
+		[chat_id, ai_memory_tools.AI_MEMORY_AI_ID, ai_memory_tools.SETTING_USER_MEMORY_ENABLED, ai_memory_tools.SETTING_USER_CHARACTERISTICS_ENABLED]
 	);
 
 	if(!res){
 		logger.warn(`Не удалось прочитать AI2CHAT_SETTINGS для приватной памяти. chat_id=${chat_id}`).then();
 		return {
-			user_memory_enabled: false,
+			user_memory_enabled:          false,
 			user_characteristics_enabled: false
 		};
 	}
@@ -205,8 +181,8 @@ async function getChatPrivateContextSettings(chat_id){
 	const settings = {};
 	res.rows?.forEach(row => settings[row.type] = row.value);
 	return {
-		user_memory_enabled: parseBoolSetting(settings[SETTING_USER_MEMORY_ENABLED], true, SETTING_USER_MEMORY_ENABLED, chat_id),
-		user_characteristics_enabled: parseBoolSetting(settings[SETTING_USER_CHARACTERISTICS_ENABLED], true, SETTING_USER_CHARACTERISTICS_ENABLED, chat_id)
+		user_memory_enabled:          parseBoolSetting(settings[ai_memory_tools.SETTING_USER_MEMORY_ENABLED], true, ai_memory_tools.SETTING_USER_MEMORY_ENABLED, chat_id),
+		user_characteristics_enabled: parseBoolSetting(settings[ai_memory_tools.SETTING_USER_CHARACTERISTICS_ENABLED], true, ai_memory_tools.SETTING_USER_CHARACTERISTICS_ENABLED, chat_id)
 	};
 }
 
@@ -242,14 +218,14 @@ async function checkPrivateContextAccess(ctx, context_type, operation, bRequireP
 	}
 
 	const chat_settings = await getChatPrivateContextSettings(identity.chat_id);
-	if(context_type === CONTEXT_TYPE_MEMORY && chat_settings.user_memory_enabled !== true){
+	if(context_type === ai_memory_tools.CONTEXT_TYPE_MEMORY && chat_settings.user_memory_enabled !== true){
 		if(bWarn){
 			logger.warn(`User-memory отключена для чата. chat_id=${identity.chat_id}; user_id=${identity.user_id}`).then();
 		}
 		return {enabled: false, reason: 'user_memory_disabled_for_chat', identity};
 	}
 
-	if(context_type === CONTEXT_TYPE_CHARACTERISTICS && chat_settings.user_characteristics_enabled !== true){
+	if(context_type === ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS && chat_settings.user_characteristics_enabled !== true){
 		if(bWarn){
 			logger.warn(`User-characteristics отключены для чата. chat_id=${identity.chat_id}; user_id=${identity.user_id}`).then();
 		}
@@ -282,7 +258,7 @@ async function checkStorageReady(context_type, chat_id, user_id){
  */
 function defaultMemoryData(){
 	return {
-		items: [],
+		items:      [],
 		updated_at: new Date().toISOString()
 	};
 }
@@ -293,9 +269,9 @@ function defaultMemoryData(){
  */
 function defaultCharacteristicsData(){
 	return {
-		profile: {},
+		profile:      {},
 		observations: [],
-		updated_at: new Date().toISOString()
+		updated_at:   new Date().toISOString()
 	};
 }
 
@@ -322,7 +298,7 @@ function checkDecryptedData(data, context_type, chat_id, user_id){
  * @returns {Promise<?Object>}
  */
 async function readUserMemoryRow(chat_id, user_id){
-	if(!await checkStorageReady(CONTEXT_TYPE_MEMORY, chat_id, user_id)){
+	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_MEMORY, chat_id, user_id)){
 		return null;
 	}
 
@@ -330,16 +306,17 @@ async function readUserMemoryRow(chat_id, user_id){
 		`SELECT ENABLED,
                 VERSION,
                 UPDATED_AT,
-                CASE WHEN ENABLED IS TRUE THEN
-                    PGP_SYM_DECRYPT(
-                        DATA_ENC,
-                        ENCODE(DIGEST($3::TEXT || ':' || CHAT_ID::TEXT || ':' || USER_ID::TEXT || ':' || $4::TEXT, 'sha256'), 'hex')
-                    )::JSONB
-                ELSE NULL END AS DATA
+                CASE
+                    WHEN ENABLED IS TRUE THEN
+                        PGP_SYM_DECRYPT(
+                                DATA_ENC,
+                                ENCODE(DIGEST($3::TEXT || ':' || CHAT_ID::TEXT || ':' || USER_ID::TEXT || ':' || $4::TEXT, 'sha256'), 'hex')
+                        )::JSONB
+                    ELSE NULL END AS DATA
          FROM USER_MEMORY
          WHERE CHAT_ID = $1::BIGINT
            AND USER_ID = $2::BIGINT;`,
-		[chat_id, user_id, AI_MEMORY_MASTER_KEY, CONTEXT_TYPE_MEMORY]
+		[chat_id, user_id, ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_MEMORY]
 	);
 
 	if(!res){
@@ -349,10 +326,10 @@ async function readUserMemoryRow(chat_id, user_id){
 
 	const row = res?.rows?.[0] || null;
 	if(row?.enabled === true){
-		row.data = checkDecryptedData(row.data, CONTEXT_TYPE_MEMORY, chat_id, user_id);
+		row.data = checkDecryptedData(row.data, ai_memory_tools.CONTEXT_TYPE_MEMORY, chat_id, user_id);
 		if(!row.data){
 			row.enabled = false;
-			row.reason = 'decrypt_error';
+			row.reason  = 'decrypt_error';
 		}
 	}
 	return row;
@@ -365,7 +342,7 @@ async function readUserMemoryRow(chat_id, user_id){
  * @returns {Promise<?Object>}
  */
 async function readUserCharacteristicsRow(chat_id, user_id){
-	if(!await checkStorageReady(CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
+	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
 		return null;
 	}
 
@@ -373,16 +350,17 @@ async function readUserCharacteristicsRow(chat_id, user_id){
 		`SELECT ENABLED,
                 VERSION,
                 UPDATED_AT,
-                CASE WHEN ENABLED IS TRUE THEN
-                    PGP_SYM_DECRYPT(
-                        DATA_ENC,
-                        ENCODE(DIGEST($3::TEXT || ':' || CHAT_ID::TEXT || ':' || USER_ID::TEXT || ':' || $4::TEXT, 'sha256'), 'hex')
-                    )::JSONB
-                ELSE NULL END AS DATA
+                CASE
+                    WHEN ENABLED IS TRUE THEN
+                        PGP_SYM_DECRYPT(
+                                DATA_ENC,
+                                ENCODE(DIGEST($3::TEXT || ':' || CHAT_ID::TEXT || ':' || USER_ID::TEXT || ':' || $4::TEXT, 'sha256'), 'hex')
+                        )::JSONB
+                    ELSE NULL END AS DATA
          FROM USER_CHARACTERISTICS
          WHERE CHAT_ID = $1::BIGINT
            AND USER_ID = $2::BIGINT;`,
-		[chat_id, user_id, AI_MEMORY_MASTER_KEY, CONTEXT_TYPE_CHARACTERISTICS]
+		[chat_id, user_id, ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS]
 	);
 
 	if(!res){
@@ -392,10 +370,10 @@ async function readUserCharacteristicsRow(chat_id, user_id){
 
 	const row = res?.rows?.[0] || null;
 	if(row?.enabled === true){
-		row.data = checkDecryptedData(row.data, CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id);
+		row.data = checkDecryptedData(row.data, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id);
 		if(!row.data){
 			row.enabled = false;
-			row.reason = 'decrypt_error';
+			row.reason  = 'decrypt_error';
 		}
 	}
 	return row;
@@ -414,29 +392,27 @@ async function upsertUserMemoryRow(chat_id, user_id, data){
 		return null;
 	}
 
-	if(!await checkStorageReady(CONTEXT_TYPE_MEMORY, chat_id, user_id)){
+	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_MEMORY, chat_id, user_id)){
 		return null;
 	}
 
 	return db.query(
 		`INSERT INTO USER_MEMORY (CHAT_ID, USER_ID, DATA_ENC, ENABLED, UPDATED_AT)
-         VALUES (
-             $1::BIGINT,
-             $2::BIGINT,
-             PGP_SYM_ENCRYPT(
-                 $3::TEXT,
-                 ENCODE(DIGEST($4::TEXT || ':' || $1::BIGINT::TEXT || ':' || $2::BIGINT::TEXT || ':' || $5::TEXT, 'sha256'), 'hex'),
-                 'cipher-algo=aes256, compress-algo=1'
-             ),
-             TRUE,
-             NOW()
-         )
+         VALUES ($1::BIGINT,
+                 $2::BIGINT,
+                 PGP_SYM_ENCRYPT(
+                         $3::TEXT,
+                         ENCODE(DIGEST($4::TEXT || ':' || $1::BIGINT::TEXT || ':' || $2::BIGINT::TEXT || ':' || $5::TEXT, 'sha256'), 'hex'),
+                         'cipher-algo=aes256, compress-algo=1'
+                 ),
+                 TRUE,
+                 NOW())
          ON CONFLICT (CHAT_ID, USER_ID)
-             DO UPDATE SET DATA_ENC = EXCLUDED.DATA_ENC,
-                           ENABLED = TRUE,
-                           VERSION = USER_MEMORY.VERSION + 1,
+             DO UPDATE SET DATA_ENC   = EXCLUDED.DATA_ENC,
+                           ENABLED    = TRUE,
+                           VERSION    = USER_MEMORY.VERSION + 1,
                            UPDATED_AT = NOW();`,
-		[chat_id, user_id, json2string(data), AI_MEMORY_MASTER_KEY, CONTEXT_TYPE_MEMORY]
+		[chat_id, user_id, json2string(data), ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_MEMORY]
 	);
 }
 
@@ -453,29 +429,27 @@ async function upsertUserCharacteristicsRow(chat_id, user_id, data){
 		return null;
 	}
 
-	if(!await checkStorageReady(CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
+	if(!await checkStorageReady(ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, chat_id, user_id)){
 		return null;
 	}
 
 	return db.query(
 		`INSERT INTO USER_CHARACTERISTICS (CHAT_ID, USER_ID, DATA_ENC, ENABLED, UPDATED_AT)
-         VALUES (
-             $1::BIGINT,
-             $2::BIGINT,
-             PGP_SYM_ENCRYPT(
-                 $3::TEXT,
-                 ENCODE(DIGEST($4::TEXT || ':' || $1::BIGINT::TEXT || ':' || $2::BIGINT::TEXT || ':' || $5::TEXT, 'sha256'), 'hex'),
-                 'cipher-algo=aes256, compress-algo=1'
-             ),
-             TRUE,
-             NOW()
-         )
+         VALUES ($1::BIGINT,
+                 $2::BIGINT,
+                 PGP_SYM_ENCRYPT(
+                         $3::TEXT,
+                         ENCODE(DIGEST($4::TEXT || ':' || $1::BIGINT::TEXT || ':' || $2::BIGINT::TEXT || ':' || $5::TEXT, 'sha256'), 'hex'),
+                         'cipher-algo=aes256, compress-algo=1'
+                 ),
+                 TRUE,
+                 NOW())
          ON CONFLICT (CHAT_ID, USER_ID)
-             DO UPDATE SET DATA_ENC = EXCLUDED.DATA_ENC,
-                           ENABLED = TRUE,
-                           VERSION = USER_CHARACTERISTICS.VERSION + 1,
+             DO UPDATE SET DATA_ENC   = EXCLUDED.DATA_ENC,
+                           ENABLED    = TRUE,
+                           VERSION    = USER_CHARACTERISTICS.VERSION + 1,
                            UPDATED_AT = NOW();`,
-		[chat_id, user_id, json2string(data), AI_MEMORY_MASTER_KEY, CONTEXT_TYPE_CHARACTERISTICS]
+		[chat_id, user_id, json2string(data), ai_memory_tools.AI_MEMORY_MASTER_KEY, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS]
 	);
 }
 
@@ -486,7 +460,7 @@ async function upsertUserCharacteristicsRow(chat_id, user_id, data){
  * @param {Function} readRowFunc
  * @param {Function} defaultFactory
  * @param {Boolean} [bRequirePrivate=true]
- * @returns {Promise<{enabled: Boolean, data: ?Object, reason: ?String, updated_at: *, version: ?Number}>}
+ * @returns {Promise<{enabled: Boolean, data: ?Object, reason?: ?String, updated_at?: *, version?: ?Number}>}
  */
 async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bRequirePrivate = true){
 	if(typeof readRowFunc !== 'function'){
@@ -518,26 +492,26 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
 	const row = await readRowFunc(access.identity.chat_id, access.identity.user_id);
 	if(!row){
 		return {
-			enabled: true,
-			data: default_data,
+			enabled:    true,
+			data:       default_data,
 			updated_at: null
 		};
 	}
 
 	if(row.enabled !== true){
 		return {
-			enabled: false,
-			data: null,
-			reason: row.reason || 'disabled_for_user_chat',
+			enabled:    false,
+			data:       null,
+			reason:     row.reason || 'disabled_for_user_chat',
 			updated_at: row.updated_at
 		};
 	}
 
 	return {
-		enabled: true,
-		data: row.data,
+		enabled:    true,
+		data:       row.data,
 		updated_at: row.updated_at,
-		version: row.version
+		version:    row.version
 	};
 }
 
@@ -548,7 +522,7 @@ async function getPrivateData(ctx, context_type, readRowFunc, defaultFactory, bR
  * @returns {Promise<Object>}
  */
 export async function getUserMemory(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
+	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
 /**
@@ -558,7 +532,7 @@ export async function getUserMemory(ctx){
  * @returns {Promise<Object>}
  */
 export async function getUserMemoryPrivate(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
+	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, true);
 }
 
 /**
@@ -568,7 +542,7 @@ export async function getUserMemoryPrivate(ctx){
  * @returns {Promise<Object>}
  */
 async function getUserMemoryForUpdate(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
+	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, readUserMemoryRow, defaultMemoryData, false);
 }
 
 /**
@@ -578,7 +552,7 @@ async function getUserMemoryForUpdate(ctx){
  * @returns {Promise<Object>}
  */
 export async function getUserCharacteristics(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
+	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
 }
 
 /**
@@ -588,7 +562,7 @@ export async function getUserCharacteristics(ctx){
  * @returns {Promise<Object>}
  */
 export async function getUserCharacteristicsPrivate(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, true);
+	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, true);
 }
 
 /**
@@ -597,7 +571,7 @@ export async function getUserCharacteristicsPrivate(ctx){
  * @returns {Promise<Object>}
  */
 async function getUserCharacteristicsForUpdate(ctx){
-	return getPrivateData(ctx, CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
+	return getPrivateData(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, readUserCharacteristicsRow, defaultCharacteristicsData, false);
 }
 
 /**
@@ -618,11 +592,11 @@ function normalizeMemoryItem(args){
 	}
 
 	return {
-		id: String(args?.id || data.id || randomUUID()),
-		type: String(args?.type || data.type || 'memory').trim() || 'memory',
-		text: redactSecrets(text),
+		id:         String(args?.id || data.id || randomUUID()),
+		type:       String(args?.type || data.type || 'memory').trim() || 'memory',
+		text:       redactSecrets(text),
 		data,
-		source: String(args?.source || 'ai_tool'),
+		source:     String(args?.source || 'ai_tool'),
 		confidence: Number.isFinite(Number(args?.confidence)) ? Math.max(0, Math.min(1, Number(args.confidence))) : 0.7,
 		updated_at: new Date().toISOString()
 	};
@@ -630,7 +604,7 @@ function normalizeMemoryItem(args){
 
 /**
  * Нормализация одной или нескольких записей памяти.
- * @param {Object|Object[]} args
+ * @param {Object|Object[]|{items: Array}} args
  * @returns {Object[]}
  */
 function normalizeMemoryItems(args){
@@ -646,17 +620,17 @@ function normalizeMemoryItems(args){
 function ensureMemoryItemIds(data){
 	const result = isPlainObject(data) ? data : defaultMemoryData();
 	result.items = Array.isArray(result.items) ? result.items : [];
-	let changed = false;
+	let changed  = false;
 
 	result.items = result.items
-		.filter(item => isPlainObject(item))
-		.map(item => {
-			if(!item.id){
-				changed = true;
-				return {...item, id: randomUUID()};
-			}
-			return item;
-		});
+	                     .filter(item => isPlainObject(item))
+	                     .map(item => {
+		                     if(!item.id){
+			                     changed = true;
+			                     return {...item, id: randomUUID()};
+		                     }
+		                     return item;
+	                     });
 
 	return {data: result, changed};
 }
@@ -665,11 +639,11 @@ function ensureMemoryItemIds(data){
  * Сохранение записей памяти пользователя.
  * Системная функция: может работать из группы, но только для текущего ctx.from/ctx.chat.
  * @param {CTX} ctx
- * @param {Object|Object[]} args
+ * @param {Object|Object[]|{chat_id: Number, user_id: Number}} args
  * @returns {Promise<Object>}
  */
 export async function setUserMemory(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'set_user_memory', false, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'set_user_memory', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -692,8 +666,8 @@ export async function setUserMemory(ctx, args){
 		return {ok: false, error: 'invalid_memory_item'};
 	}
 
-	const {data} = ensureMemoryItemIds(current.data || defaultMemoryData());
-	data.items = data.items.concat(items);
+	const {data}    = ensureMemoryItemIds(current.data || defaultMemoryData());
+	data.items      = data.items.concat(items);
 	data.updated_at = new Date().toISOString();
 
 	await upsertUserMemoryRow(access.identity.chat_id, access.identity.user_id, data);
@@ -706,7 +680,7 @@ export async function setUserMemory(ctx, args){
  * @returns {Promise<Object>}
  */
 export async function listUserMemoryItemsPrivate(ctx){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'list_user_memory_items', true, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'list_user_memory_items', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason, items: []};
 	}
@@ -733,7 +707,7 @@ export async function listUserMemoryItemsPrivate(ctx){
  * @returns {Promise<Object>}
  */
 export async function updateUserMemoryItemPrivate(ctx, item_id, args){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'update_user_memory_item', true, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'update_user_memory_item', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -749,7 +723,7 @@ export async function updateUserMemoryItemPrivate(ctx, item_id, args){
 	}
 
 	const {data} = ensureMemoryItemIds(current.data || defaultMemoryData());
-	const index = data.items.findIndex(item => item?.id === id);
+	const index  = data.items.findIndex(item => item?.id === id);
 	if(index < 0){
 		return {ok: false, error: 'memory_item_not_found'};
 	}
@@ -788,7 +762,7 @@ export async function updateUserMemoryItemPrivate(ctx, item_id, args){
 	}
 
 	data.items[index] = new_item;
-	data.updated_at = new Date().toISOString();
+	data.updated_at   = new Date().toISOString();
 
 	await upsertUserMemoryRow(access.identity.chat_id, access.identity.user_id, data);
 	return {ok: true, updated: true, item: new_item};
@@ -801,7 +775,7 @@ export async function updateUserMemoryItemPrivate(ctx, item_id, args){
  * @returns {Promise<Object>}
  */
 export async function deleteUserMemoryItemPrivate(ctx, item_id){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'delete_user_memory_item', true, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'delete_user_memory_item', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -818,7 +792,7 @@ export async function deleteUserMemoryItemPrivate(ctx, item_id){
 
 	const {data} = ensureMemoryItemIds(current.data || defaultMemoryData());
 	const before = data.items.length;
-	data.items = data.items.filter(item => item?.id !== id);
+	data.items   = data.items.filter(item => item?.id !== id);
 	if(data.items.length === before){
 		return {ok: false, error: 'memory_item_not_found'};
 	}
@@ -836,7 +810,7 @@ export async function deleteUserMemoryItemPrivate(ctx, item_id){
  * @returns {Promise<Object>}
  */
 export async function patchUserCharacteristics(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'patch_user_characteristics', false, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'patch_user_characteristics', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -868,11 +842,11 @@ export async function patchUserCharacteristics(ctx, args){
 		return {ok: false, error: 'invalid_patch'};
 	}
 
-	const data = current.data || defaultCharacteristicsData();
-	data.profile = profile;
+	const data        = current.data || defaultCharacteristicsData();
+	data.profile      = profile;
 	data.observations = Array.isArray(data.observations) ? data.observations : [];
 	data.observations.push({
-		evidence: String(args?.evidence || '').slice(0, 1000),
+		evidence:   String(args?.evidence || '').slice(0, 1000),
 		confidence: Number.isFinite(Number(args?.confidence)) ? Math.max(0, Math.min(1, Number(args.confidence))) : 0.6,
 		updated_at: new Date().toISOString()
 	});
@@ -890,7 +864,7 @@ export async function patchUserCharacteristics(ctx, args){
  * @returns {Promise<Object>}
  */
 export async function recalculateUserCharacteristics(ctx, args){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'recalculate_user_characteristics', false, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'recalculate_user_characteristics', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -918,14 +892,14 @@ export async function recalculateUserCharacteristics(ctx, args){
 	}
 
 	const observations = Array.isArray(args?.observations) ? args.observations.slice(0, 50) : [];
-	const data = {
-		profile: safe_profile,
+	const data         = {
+		profile:      safe_profile,
 		observations: observations.map(observation => ({
-			evidence: String(observation?.evidence || '').slice(0, 1000),
+			evidence:   String(observation?.evidence || '').slice(0, 1000),
 			confidence: Number.isFinite(Number(observation?.confidence)) ? Math.max(0, Math.min(1, Number(observation.confidence))) : 0.6,
 			updated_at: new Date().toISOString()
 		})),
-		updated_at: new Date().toISOString()
+		updated_at:   new Date().toISOString()
 	};
 
 	await upsertUserCharacteristicsRow(access.identity.chat_id, access.identity.user_id, data);
@@ -938,7 +912,7 @@ export async function recalculateUserCharacteristics(ctx, args){
  * @returns {Promise<Object>}
  */
 export async function deleteUserMemory(ctx){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_MEMORY, 'delete_user_memory', true, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_MEMORY, 'delete_user_memory', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -953,7 +927,7 @@ export async function deleteUserMemory(ctx){
  * @returns {Promise<Object>}
  */
 export async function deleteUserCharacteristics(ctx){
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'delete_user_characteristics', true, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'delete_user_characteristics', true, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -977,7 +951,7 @@ export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal =
 		return {ok: false, error: 'direct_call_forbidden'};
 	}
 
-	const access = await checkPrivateContextAccess(ctx, CONTEXT_TYPE_CHARACTERISTICS, 'queue_user_characteristics_recalc', false, true);
+	const access = await checkPrivateContextAccess(ctx, ai_memory_tools.CONTEXT_TYPE_CHARACTERISTICS, 'queue_user_characteristics_recalc', false, true);
 	if(access.enabled !== true){
 		return {ok: false, error: access.reason};
 	}
@@ -987,8 +961,8 @@ export async function queueUserCharacteristicsRecalc(ctx, args = {}, bInternal =
 		`INSERT INTO USER_MEMORY_RECALC_QUEUE (CHAT_ID, USER_ID, KIND, REASON, PRIORITY, NOT_BEFORE, UPDATED_AT)
          VALUES ($1::BIGINT, $2::BIGINT, 'characteristics', $3::TEXT, $4::INT, NOW(), NOW())
          ON CONFLICT (CHAT_ID, USER_ID, KIND)
-             DO UPDATE SET REASON = EXCLUDED.REASON,
-                           PRIORITY = LEAST(USER_MEMORY_RECALC_QUEUE.PRIORITY, EXCLUDED.PRIORITY),
+             DO UPDATE SET REASON     = EXCLUDED.REASON,
+                           PRIORITY   = LEAST(USER_MEMORY_RECALC_QUEUE.PRIORITY, EXCLUDED.PRIORITY),
                            NOT_BEFORE = LEAST(USER_MEMORY_RECALC_QUEUE.NOT_BEFORE, EXCLUDED.NOT_BEFORE),
                            UPDATED_AT = NOW();`,
 		[access.identity.chat_id, access.identity.user_id, String(args?.reason || 'ai_dialog'), Number.isFinite(priority) ? priority : 100]
@@ -1018,9 +992,9 @@ export async function getPrivateContextMessages(ctx){
 	}
 
 	const payload = {
-		context_type: 'encrypted_private_context',
-		scope: 'current Telegram CHAT_ID + USER_ID only',
-		allowed_use: 'background_context_for_answer_preparation_only',
+		context_type:  'encrypted_private_context',
+		scope:         'current Telegram CHAT_ID + USER_ID only',
+		allowed_use:   'background_context_for_answer_preparation_only',
 		forbidden_use: 'explicit_output_quote_list_summary_reveal_or_mention'
 	};
 	if(memory.enabled === true){
@@ -1030,23 +1004,23 @@ export async function getPrivateContextMessages(ctx){
 		payload.characteristics = characteristics.data;
 	}
 
-	const payload_text = json2string(payload).slice(0, AI_MEMORY_MAX_PROMPT_CHARS);
+	const payload_text = json2string(payload).slice(0, ai_memory_tools.AI_MEMORY_MAX_PROMPT_CHARS);
 	if(!payload_text || payload_text === '{}'){
 		return [];
 	}
 
 	return [{
-		role: 'system',
-		content: [
-			'PRIVATE_CONTEXT_JSON follows.',
-			'This is encrypted-at-rest private context for the current Telegram chat-user pair only.',
-			'Use it strictly as background context for preparing the answer.',
-			'Do not quote, list, summarize, reveal, mention or explicitly output stored memory or characteristics in any AI answer.',
-			'Only dedicated private-chat bot commands may display, edit, delete or export these stored values.',
-			'',
-			payload_text
-		].join('\n'),
-		private_context: true,
+		role:                 'system',
+		content:              [
+			                      'PRIVATE_CONTEXT_JSON follows.',
+			                      'This is encrypted-at-rest private context for the current Telegram chat-user pair only.',
+			                      'Use it strictly as background context for preparing the answer.',
+			                      'Do not quote, list, summarize, reveal, mention or explicitly output stored memory or characteristics in any AI answer.',
+			                      'Only dedicated private-chat bot commands may display, edit, delete or export these stored values.',
+			                      '',
+			                      payload_text
+		                      ].join('\n'),
+		private_context:      true,
 		private_context_type: 'user_memory'
 	}];
 }

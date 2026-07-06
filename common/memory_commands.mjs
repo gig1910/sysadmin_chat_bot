@@ -4,7 +4,7 @@ import * as logger    from './logger.mjs';
 import * as telegram  from './telegram.mjs';
 import * as tg_db     from './telegram_db.mjs';
 import * as memory_db from './memory_db.mjs';
-import {json2string} from './utils.mjs';
+import {json2string}  from './utils.mjs';
 
 /**
  * Гарантирует наличие текущих CHAT/USER перед операциями с приватной памятью.
@@ -101,16 +101,18 @@ async function sendMemoryManager(ctx){
  * @returns {void}
  */
 export function registerMemoryCommands(bot){
-	bot.command('memory', async(ctx) => sendMemoryManager(ctx));
 
-	bot.command('memory_edit', async(ctx) => {
+
+	bot?.command('memory', async(ctx) => sendMemoryManager(ctx));
+
+	bot?.command('memory_edit', async(ctx) => {
 		if(!await requirePrivateBotCommand(ctx, '/memory_edit')){
 			return;
 		}
 
 		const message = telegram.getCtxMessage(ctx);
-		const msg = message?.text?.replace(/^\/memory_edit(?:@\w+)?\s*/igm, '').trim() || '';
-		const arr = /^([^\s]+)\s+([\s\S]+)$/im.exec(msg);
+		const msg     = message?.text?.replace(/^\/memory_edit(?:@\w+)?\s*/igm, '').trim() || '';
+		const arr     = /^([^\s]+)\s+([\s\S]+)$/im.exec(msg);
 		if(!arr){
 			return telegram.sendMessage(ctx, 'Формат: /memory_edit MEMORY_ID новый текст записи', false);
 		}
@@ -122,7 +124,7 @@ export function registerMemoryCommands(bot){
 		return telegram.sendMessage(ctx, `Не удалось обновить запись памяти: ${res.error || 'unknown_error'}`, false);
 	});
 
-	bot.command('memory_delete', async(ctx) => {
+	bot?.command('memory_delete', async(ctx) => {
 		if(!await requirePrivateBotCommand(ctx, '/memory_delete')){
 			return;
 		}
@@ -140,7 +142,7 @@ export function registerMemoryCommands(bot){
 		return telegram.sendMessage(ctx, `Не удалось удалить запись памяти: ${res.error || 'unknown_error'}`, false);
 	});
 
-	bot.command('memory_forget', async(ctx) => {
+	bot?.command('memory_forget', async(ctx) => {
 		if(!await requirePrivateBotCommand(ctx, '/memory_forget')){
 			return;
 		}
@@ -149,7 +151,7 @@ export function registerMemoryCommands(bot){
 		return telegram.sendMessage(ctx, res.ok === true ? 'Память очищена.' : `Не удалось очистить память: ${res.error || 'unknown_error'}`, false);
 	});
 
-	bot.command('characteristics', async(ctx) => {
+	bot?.command('characteristics', async(ctx) => {
 		if(!await requirePrivateBotCommand(ctx, '/characteristics')){
 			return;
 		}
@@ -161,7 +163,7 @@ export function registerMemoryCommands(bot){
 		return telegram.sendMessage(ctx, json2string(res.data, 2) || '{}', false);
 	});
 
-	bot.command('characteristics_reset', async(ctx) => {
+	bot?.command('characteristics_reset', async(ctx) => {
 		if(!await requirePrivateBotCommand(ctx, '/characteristics_reset')){
 			return;
 		}
@@ -170,7 +172,7 @@ export function registerMemoryCommands(bot){
 		return telegram.sendMessage(ctx, res.ok === true ? 'Характеристики очищены.' : `Не удалось очистить характеристики: ${res.error || 'unknown_error'}`, false);
 	});
 
-	bot.action(/memory_edit:(.+)/, async(ctx) => {
+	bot?.action(/memory_edit:(.+)/, async(ctx) => {
 		if(!await requirePrivateBotCommand(ctx, 'memory_edit')){
 			return ctx.answerCbQuery('Только личный чат.');
 		}
@@ -180,13 +182,13 @@ export function registerMemoryCommands(bot){
 		return telegram.sendMessage(ctx, `Для изменения записи отправьте:\n/memory_edit ${item_id} новый текст записи`, false);
 	});
 
-	bot.action(/memory_delete:(.+)/, async(ctx) => {
+	bot?.action(/memory_delete:(.+)/, async(ctx) => {
 		if(!await requirePrivateBotCommand(ctx, 'memory_delete')){
 			return ctx.answerCbQuery('Только личный чат.');
 		}
 
 		const item_id = ctx.match?.[1];
-		const res = await memory_db.deleteUserMemoryItemPrivate(ctx, item_id);
+		const res     = await memory_db.deleteUserMemoryItemPrivate(ctx, item_id);
 		await ctx.answerCbQuery(res.ok === true ? 'Удалено.' : 'Ошибка удаления.');
 		if(res.ok === true){
 			return ctx.editMessageText('Запись памяти удалена.');
