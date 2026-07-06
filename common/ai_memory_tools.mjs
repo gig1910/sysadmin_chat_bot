@@ -1,10 +1,13 @@
+import * as telegram from './telegram.mjs';
 import {
 	deleteUserMemory,
 	getUserCharacteristics,
 	getUserMemory,
-	isUserMemoryEnabled,
+	isPrivateContextEnabled,
+	isUserCharacteristicsEnabled,
+	isUserMemoryDataEnabled,
 	patchUserCharacteristics,
-	queueUserCharacteristicsRecalc,
+	recalculateUserCharacteristics,
 	setUserMemory
 } from './memory_db.mjs';
 
@@ -14,9 +17,14 @@ const memoryToolNames = new Set([
 	'delete_user_memory',
 	'get_user_characteristics',
 	'patch_user_characteristics',
-	'queue_user_characteristics_recalc'
+	'recalculate_user_characteristics'
 ]);
 
+/**
+ * Проверка, что tool относится к подсистеме пользовательской памяти.
+ * @param {String} name
+ * @returns {Boolean}
+ */
 export function isMemoryToolName(name){
 	return memoryToolNames.has(name);
 }
@@ -25,7 +33,7 @@ const getUserMemoryTool = {
 	type: 'function',
 	function: {
 		name: 'get_user_memory',
-		description: 'Read encrypted memory for the current Telegram chat-user pair. The model cannot choose chat_id or user_id. Use only when user-specific preferences or saved context are relevant.',
+		description: 'Read encrypted memory for the current Telegram chat-user pair. Available only in a private chat with the bot. The model cannot choose chat_id or user_id.',
 		parameters: {
 			type: 'object',
 			properties: {},
@@ -38,17 +46,32 @@ const setUserMemoryTool = {
 	type: 'function',
 	function: {
 		name: 'set_user_memory',
-		description: 'Store a user memory item for the current Telegram chat-user pair. Use when the user explicitly asks to remember/consider something, or when a stable preference is clearly stated. Never store secrets, passwords, tokens, private keys, addresses, phone numbers, medical, religious, sexual, children or other sensitive data.',
+		description: 'Store one or more user memory items for the current Telegram chat-user pair. Available only in a private chat with the bot. Never store secrets, passwords, tokens, private keys, addresses, phone numbers, medical, religious, sexual, children or other sensitive data.',
 		parameters: {
 			type: 'object',
 			properties: {
+				items: {
+					type: 'array',
+					description: 'Optional list of memory items to store. Use this when saving several separate facts.',
+					items: {
+						type: 'object',
+						properties: {
+							type: {type: 'string'},
+							text: {type: 'string'},
+							data: {type: 'object'},
+							confidence: {type: 'number', minimum: 0, maximum: 1}
+						},
+						required: ['text'],
+						additionalProperties: false
+					}
+				},
 				type: {
 					type: 'string',
 					description: 'Memory type, for example preference, fact, project_context, constraint.'
 				},
 				text: {
 					type: 'string',
-					description: 'Short memory text to store.'
+					description: 'Short memory text to store when saving one item.'
 				},
 				data: {
 					type: 'object',
@@ -60,7 +83,6 @@ const setUserMemoryTool = {
 					maximum: 1
 				}
 			},
-			required: ['text'],
 			additionalProperties: false
 		}
 	}
@@ -70,7 +92,7 @@ const deleteUserMemoryTool = {
 	type: 'function',
 	function: {
 		name: 'delete_user_memory',
-		description: 'Clear all encrypted user memory for the current Telegram chat-user pair. Use only when the user explicitly asks to forget/delete stored memory.',
+		description: 'Clear all encrypted user memory for the current Telegram chat-user pair. Available only in a private chat with the bot. Use only when the user explicitly confirms deletion.',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -89,7 +111,7 @@ const getUserCharacteristicsTool = {
 	type: 'function',
 	function: {
 		name: 'get_user_characteristics',
-		description: 'Read encrypted cumulative characteristics for the current Telegram chat-user pair. Use to adapt style and continuity, not to reveal private data.',
+		description: 'Read encrypted cumulative characteristics for the current Telegram chat-user pair. Available only in a private chat with the bot. Use to adapt style and continuity, not to reveal private data.',
 		parameters: {
 			type: 'object',
 			properties: {},
@@ -102,13 +124,13 @@ const patchUserCharacteristicsTool = {
 	type: 'function',
 	function: {
 		name: 'patch_user_characteristics',
-		description: 'Patch cumulative user characteristics for the current Telegram chat-user pair. Use only for stable, low-sensitivity observations. Existing characteristics should have priority; conflicting weak observations should reduce confidence rather than overwrite strongly supported facts.',
+		description: 'Patch cumulative user characteristics for the current Telegram chat-user pair. System tool: can be used from group chats, but only for the current Telegram user from ctx. Do not provide chat_id or user_id. Use only for stable, low-sensitivity observations.',
 		parameters: {
 			type: 'object',
 			properties: {
 				patch: {
 					type: 'object',
-					description: 'JSON patch-like object to merge into the cumulative characteristics profile.'
+					description: 'JSON object to merge into the cumulative characteristics profile.'
 				},
 				evidence: {
 					type: 'string',
@@ -126,37 +148,80 @@ const patchUserCharacteristicsTool = {
 	}
 };
 
-const queueUserCharacteristicsRecalcTool = {
+const recalculateUserCharacteristicsTool = {
 	type: 'function',
 	function: {
-		name: 'queue_user_characteristics_recalc',
-		description: 'Queue a background recalculation of encrypted user characteristics for the current Telegram chat-user pair. Use when the dialogue suggests characteristics should be revisited but immediate patching is uncertain.',
+		name: 'recalculate_user_characteristics',
+		description: 'Replace cumulative user characteristics for the current Telegram chat-user pair with a recalculated profile. System tool: can be used from group chats, but only for the current Telegram user from ctx. Do not provide chat_id or user_id. If several users need recalculation, call this tool separately for each user in its own context.',
 		parameters: {
 			type: 'object',
 			properties: {
-				reason: {type: 'string'},
-				priority: {type: 'integer', minimum: 1, maximum: 1000}
+				profile: {
+					type: 'object',
+					description: 'Complete recalculated low-sensitivity user characteristics profile.'
+				},
+				observations: {
+					type: 'array',
+					items: {
+						type: 'object',
+						properties: {
+							evidence: {type: 'string'},
+							confidence: {type: 'number', minimum: 0, maximum: 1}
+						},
+						additionalProperties: false
+					}
+				}
 			},
+			required: ['profile'],
 			additionalProperties: false
 		}
 	}
 };
 
-export function getMemoryToolDefinitions(){
-	if(!isUserMemoryEnabled()){
+/**
+ * Доступен ли текущий Telegram ctx как личный чат.
+ * @param {CTX} ctx
+ * @returns {Boolean}
+ */
+function isPrivateChat(ctx){
+	return telegram.getChatFromCtx(ctx)?.type === 'private';
+}
+
+/**
+ * Получение списка memory tools для текущего ctx.
+ * Read/manage tools выдаются только в личке, системные tools характеристик — и в группе.
+ * @param {CTX} ctx
+ * @returns {Object[]}
+ */
+export function getMemoryToolDefinitions(ctx){
+	if(!isPrivateContextEnabled()){
 		return [];
 	}
 
-	return [
-		getUserMemoryTool,
-		setUserMemoryTool,
-		deleteUserMemoryTool,
-		getUserCharacteristicsTool,
-		patchUserCharacteristicsTool,
-		queueUserCharacteristicsRecalcTool
-	];
+	const tools = [];
+	const bPrivate = isPrivateChat(ctx);
+
+	if(bPrivate && isUserMemoryDataEnabled()){
+		tools.push(getUserMemoryTool, setUserMemoryTool, deleteUserMemoryTool);
+	}
+
+	if(isUserCharacteristicsEnabled()){
+		if(bPrivate){
+			tools.push(getUserCharacteristicsTool);
+		}
+		tools.push(patchUserCharacteristicsTool, recalculateUserCharacteristicsTool);
+	}
+
+	return tools;
 }
 
+/**
+ * Вызов memory tool.
+ * @param {CTX} ctx
+ * @param {String} name
+ * @param {Object} args
+ * @returns {Promise<Object>}
+ */
 export async function callMemoryTool(ctx, name, args){
 	switch(name){
 		case 'get_user_memory':
@@ -167,7 +232,7 @@ export async function callMemoryTool(ctx, name, args){
 
 		case 'delete_user_memory':
 			if(args?.confirm !== true){
-				throw new Error('delete_user_memory requires confirm=true.');
+				return {ok: false, error: 'confirm_required'};
 			}
 			return deleteUserMemory(ctx);
 
@@ -177,10 +242,10 @@ export async function callMemoryTool(ctx, name, args){
 		case 'patch_user_characteristics':
 			return patchUserCharacteristics(ctx, args);
 
-		case 'queue_user_characteristics_recalc':
-			return queueUserCharacteristicsRecalc(ctx, args);
+		case 'recalculate_user_characteristics':
+			return recalculateUserCharacteristics(ctx, args);
 
 		default:
-			throw new Error(`Unknown memory tool: ${name}`);
+			return {ok: false, error: 'unknown_memory_tool'};
 	}
 }
