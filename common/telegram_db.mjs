@@ -322,8 +322,21 @@ export const getMessagesFromChatByInterval = async(chat_id, bot_id, interval = '
  * Получение AI-настроек по chat_id.
  * @param {Number} chat_id
  * @param {Number} ai_id
- * @param {Boolean} reasoner_mode
- * @param {?String} type
+ * @param {Boolean} [reasoner_mode]
+ * @param {?String} [type]
+ * @returns {Promise<*>}
+ */
+export const getChatsSettings = async() => db.query(`
+    SELECT ID, CLEAR_INTERVAL
+    FROM CHATS
+    ORDER BY ID;`, []);
+
+/**
+ * Получение AI-настроек по chat_id.
+ * @param {Number} chat_id
+ * @param {Number} ai_id
+ * @param {Boolean} [reasoner_mode]
+ * @param {?String} [type]
  * @returns {Promise<*>}
  */
 export const getChatAISettingsByChatId = async(chat_id, ai_id, reasoner_mode, type = null) => db.query(`
@@ -339,8 +352,8 @@ export const getChatAISettingsByChatId = async(chat_id, ai_id, reasoner_mode, ty
  * Получение AI-настроек для текущего ctx.
  * @param {CTX} ctx
  * @param {Number} ai_id
- * @param {Boolean} reasoner_mode
- * @param {?String} type
+ * @param {Boolean} [reasoner_mode]
+ * @param {?String} [type]
  * @returns {Promise<*>}
  */
 export const getChatAISettings = async(ctx, ai_id, reasoner_mode, type = null) =>

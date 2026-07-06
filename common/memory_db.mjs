@@ -16,18 +16,6 @@ function getCharacteristicsMergeOptions(){
 	};
 }
 
-export function isUserMemoryDataEnabled(){
-	return ai_memory_tools.USER_MEMORY_ENABLED;
-}
-
-export function isUserCharacteristicsEnabled(){
-	return ai_memory_tools.USER_CHARACTERISTICS_ENABLED;
-}
-
-export function isPrivateContextEnabled(){
-	return ai_memory_tools.USER_MEMORY_ENABLED || ai_memory_tools.USER_CHARACTERISTICS_ENABLED;
-}
-
 function getGlobalContextState(context_type){
 	switch(context_type){
 		case ai_memory_tools.CONTEXT_TYPE_MEMORY:

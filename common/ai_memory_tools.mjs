@@ -1,15 +1,5 @@
-import * as telegram from './telegram.mjs';
-import {
-	deleteUserMemory,
-	getUserCharacteristics,
-	getUserMemory,
-	isPrivateContextEnabled,
-	isUserCharacteristicsEnabled,
-	isUserMemoryDataEnabled,
-	patchUserCharacteristics,
-	recalculateUserCharacteristics,
-	setUserMemory
-}                    from './memory_db.mjs';
+import * as telegram  from './telegram.mjs';
+import * as memory_db from './memory_db.mjs';
 
 export const AI_MEMORY_ENABLED                    = process.env.AI_MEMORY_ENABLED === 'true';
 export const AI_MEMORY_MASTER_KEY                 = process.env.AI_MEMORY_MASTER_KEY || '';
@@ -37,6 +27,13 @@ export function isUserMemoryDataEnabled(){
 	return USER_MEMORY_ENABLED;
 }
 
+export function isPrivateContextEnabled(){
+	return USER_MEMORY_ENABLED || USER_CHARACTERISTICS_ENABLED;
+}
+
+export function isUserCharacteristicsEnabled(){
+	return USER_CHARACTERISTICS_ENABLED;
+}
 
 const memoryToolNames = new Set([
 	'get_user_memory',
@@ -253,25 +250,25 @@ export function getMemoryToolDefinitions(ctx){
 export async function callMemoryTool(ctx, name, args){
 	switch(name){
 		case 'get_user_memory':
-			return getUserMemory(ctx);
+			return memory_db.getUserMemory(ctx);
 
 		case 'set_user_memory':
-			return setUserMemory(ctx, args);
+			return memory_db.setUserMemory(ctx, args);
 
 		case 'delete_user_memory':
 			if(args?.confirm !== true){
 				return {ok: false, error: 'confirm_required'};
 			}
-			return deleteUserMemory(ctx);
+			return memory_db.deleteUserMemory(ctx);
 
 		case 'get_user_characteristics':
-			return getUserCharacteristics(ctx);
+			return memory_db.getUserCharacteristics(ctx);
 
 		case 'patch_user_characteristics':
-			return patchUserCharacteristics(ctx, args);
+			return memory_db.patchUserCharacteristics(ctx, args);
 
 		case 'recalculate_user_characteristics':
-			return recalculateUserCharacteristics(ctx, args);
+			return memory_db.recalculateUserCharacteristics(ctx, args);
 
 		default:
 			return {ok: false, error: 'unknown_memory_tool'};

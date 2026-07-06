@@ -46,6 +46,14 @@ Do not store secrets, credentials, private keys, addresses, phone numbers, medic
 export const AI_ID = 1;
 
 /**
+ * Проверка, можно ли использовать AI
+ * @returns {Boolean}
+ */
+export function isAIAllowed(){
+	return !!openai;
+}
+
+/**
  * Проверка, можно ли использовать AI tools для данного типа запроса.
  * @param {Number} queryType
  * @returns {Boolean}

@@ -3,13 +3,12 @@ import 'dotenv/config';
 import * as db     from './common/db.mjs';
 import * as logger from './common/logger.mjs';
 
-import * as telegram            from './common/telegram.mjs';
-import * as telegram_db         from './common/telegram_db.mjs';
-import * as deepseek            from './common/deepseek.mjs';
-import {AI_ID}                  from "./common/deepseek.mjs";
-import {checkAIToolsConfig}     from './common/ai_tools.mjs';
-import {registerAICommands}     from './common/ai_commands.mjs';
-import {registerMemoryCommands} from './common/memory_commands.mjs';
+import * as telegram        from './common/telegram.mjs';
+import * as telegram_db     from './common/telegram_db.mjs';
+import * as deepseek        from './common/deepseek.mjs';
+import * as ai_tools        from './common/ai_tools.mjs';
+import * as ai_commands     from './common/ai_commands.mjs';
+import * as memory_commands from './common/memory_commands.mjs';
 
 
 //-----------------------------
@@ -142,6 +141,17 @@ telegram.bot.on('left_chat_member', async(ctx) => {
 	]).catch(console.error);
 });
 
+logger.info('Register AI commands...').then();
+ai_commands.registerAICommands(telegram.bot);
+logger.info('done.').then();
+logger.info('Register Memory commands...').then();
+memory_commands.registerMemoryCommands(telegram.bot);
+logger.info('Done.').then();
+
+logger.info('Checking AI tools config...').then();
+await ai_tools.checkAIToolsConfig();
+logger.info('AI tools config checked.').then();
+
 /*
 "pre_checkout_query" | "poll_answer" | "poll" | "shipping_query" | "chat_join_request" | "chat_boost" | "removed_chat_boost" | "has_media_spoiler" | "new_chat_members" | "left_chat_member" |
 "new_chat_title" | "new_chat_photo" | "delete_chat_photo" | "group_chat_created" | "supergroup_chat_created" | "channel_chat_created" | "message_auto_delete_timer_changed" | "migrate_to_chat_id" |
@@ -178,13 +188,13 @@ telegram.bot.on([
 		}
 
 		// Сохраняем сообщение
-		telegram_db.addMessage2DB(ctx, chat, user, message).then();
+		await telegram_db.addMessage2DB(ctx, chat, user, message);
 
 		if(chat.id > 0){    // Личные сообщения
 
 			// Получаем список 20 сообщений как диалог (сообщения по ответам) для нормального сохранения истории и скармливаем это DeepSeek
 			// Ответ отправляем как ответ на сообщение, т.к. возможен разрыв в ответах, что бы понимать на что DeepSeek отвечал
-			return deepseek.deepSeekTalks(ctx);
+			return deepseek.isAIAllowed && deepseek.deepSeekTalks(ctx);
 
 		}else{              // Сообщение в группу
 			if(userState?.new_user !== false){
@@ -214,7 +224,7 @@ telegram.bot.on([
 			}else if(message?.reply_to_message){
 
 				const aiSettings = {};
-				(await telegram_db.getChatAISettings(ctx, AI_ID))?.rows?.map(el => aiSettings[el?.type] = el?.value);
+				(await telegram_db.getChatAISettings(ctx, deepseek.AI_ID))?.rows?.map(el => aiSettings[el?.type] = el?.value);
 
 				if(message?.reply_to_message?.text?.substring(0, 23) === 'Привет, я бот-помошник.' ||
 				   await telegram_db.hasDeepSeekTalkMarker(message.chat?.id, message?.reply_to_message?.message_id, aiSettings)){
@@ -237,15 +247,7 @@ let process_users_handler;
 		logger.info('Connect to DB was been tested.').then();
 
 		logger.info('Launch bot...').then();
-		await telegram.bot.launch();
-		logger.info('Bot launched.').then();
-
-		logger.info('Checking AI tools config...').then();
-		await checkAIToolsConfig();
-		logger.info('AI tools config checked.').then();
-
-		registerAICommands(telegram.bot);
-		registerMemoryCommands(telegram.bot);
+		await telegram.bot.launch().then(() => logger.info('Bot launched.').then());
 
 		process_users_handler = setInterval(async() => { // Запуск процесса очистки группы от ботов, которые более чем 3 часа не отвечают на запрос принятия правил группы (запуск раз в минуту)
 			logger.info('Start interval function for clear chats...').then();

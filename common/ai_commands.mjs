@@ -2,6 +2,7 @@ import * as logger      from './logger.mjs';
 import * as telegram    from './telegram.mjs';
 import * as telegram_db from "./telegram_db.mjs";
 import * as deepseek    from './deepseek.mjs';
+import {isAIAllowed}    from "./deepseek.mjs";
 
 const AI_BOOLEAN_SETTINGS_TYPES = new Set([
 	'USER_MEMORY_ENABLED',
@@ -115,100 +116,102 @@ function getSetAISettingsUsage(){
  * @returns {void}
  */
 export function registerAICommands(bot){
-	bot?.command('deepseek_test_spam', async(ctx) => {
-		let res;
+	if(deepseek.isAIAllowed){
+		bot?.command('deepseek_test_spam', async(ctx) => {
+			let res;
 
-		/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
-		if(message && message.message_id && message?.text){
-			const answer = await deepseek.testMessage(ctx);
+			/** @type {Message|Edited_Message} */ const message = telegram.getCtxMessage(ctx);
+			if(message && message.message_id && message?.text){
+				const answer = await deepseek.testMessage(ctx);
 
-			res = telegram.replyMessage(ctx,
-				message.message_id,
-				answer || 'NOT_ANSWER',
-				false);
-		}
-
-		// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-		return res;
-	});
-
-	bot?.command('deepseek', async(ctx) => {
-		const res = deepseek.deepSeekTalks(ctx);
-
-		// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-		return res;
-	});
-
-	bot?.command('deepseek_analyse', async(ctx) => {
-		const res = deepseek.deepSeekTalks(ctx, true);
-
-		// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-		return res;
-	});
-
-	bot?.command('deepseek_summary', async(ctx) => {
-		const res = deepseek.deepSeekSummary(ctx);
-
-		// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-		return res;
-	});
-
-	bot?.command('get_ai_settings', async(ctx) => {
-		if(await requireAISettingsAccess(ctx, 'get_ai_settings')){
-			telegram.sendAutoRemoveMsg(ctx, 'Текущие настройки АИ для чата:').then();
-			telegram.sendAutoRemoveMsg(ctx, 'Режим чата:').then();
-			let settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
-			for(let i = 0; i < settings?.length; i++){
-				const setting = settings[i];
-				telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
+				res = telegram.replyMessage(ctx,
+					message.message_id,
+					answer || 'NOT_ANSWER',
+					false);
 			}
-			telegram.sendAutoRemoveMsg(ctx, `Режим аналитики:`).then();
-			settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, true))?.rows;
-			for(let i = 0; i < settings?.length; i++){
-				const setting = settings[i];
-				telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
+
+			// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+			return res;
+		});
+
+		bot?.command('deepseek', async(ctx) => {
+			const res = deepseek.deepSeekTalks(ctx);
+
+			// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+			return res;
+		});
+
+		bot?.command('deepseek_analyse', async(ctx) => {
+			const res = deepseek.deepSeekTalks(ctx, true);
+
+			// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+			return res;
+		});
+
+		bot?.command('deepseek_summary', async(ctx) => {
+			const res = deepseek.deepSeekSummary(ctx);
+
+			// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+			return res;
+		});
+
+		bot?.command('get_ai_settings', async(ctx) => {
+			if(await requireAISettingsAccess(ctx, 'get_ai_settings')){
+				telegram.sendAutoRemoveMsg(ctx, 'Текущие настройки АИ для чата:').then();
+				telegram.sendAutoRemoveMsg(ctx, 'Режим чата:').then();
+				let settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, false))?.rows;
+				for(let i = 0; i < settings?.length; i++){
+					const setting = settings[i];
+					telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
+				}
+				telegram.sendAutoRemoveMsg(ctx, `Режим аналитики:`).then();
+				settings = (await telegram_db.getChatAISettings(ctx, deepseek.AI_ID, true))?.rows;
+				for(let i = 0; i < settings?.length; i++){
+					const setting = settings[i];
+					telegram.sendAutoRemoveMsg(ctx, `${setting.type}: ${'`' + setting.value + '`'}`).then();
+				}
 			}
-		}
 
-		// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
-	});
+			// telegram.deleteMessage(ctx).then(); // Удаляем командное сообщение
+		});
 
-	bot?.command('set_ai_settings', async(ctx) => {
-		if(await requireAISettingsAccess(ctx, 'set_ai_settings')){
-			// Очистка текста от самой команды
-			const message = telegram.getCtxMessage(ctx);
-			const msg     = message.text.replace(/^\/set_ai_settings(?:@\w+)?\s*/igm, '').trim();
+		bot?.command('set_ai_settings', async(ctx) => {
+			if(await requireAISettingsAccess(ctx, 'set_ai_settings')){
+				// Очистка текста от самой команды
+				const message = telegram.getCtxMessage(ctx);
+				const msg     = message.text.replace(/^\/set_ai_settings(?:@\w+)?\s*/igm, '').trim();
 
-			// Парсим командный текст по образцу
-			// MODE TYPE VALUE
-			const arr = (/^(true|false)\s+(SYSTEM_PROMPT|SUMMARY_PROMPT|TEST_SPAM_PROMPT|TEMPERATURE|MESSAGE_LIMIT|USER_MEMORY_ENABLED|USER_CHARACTERISTICS_ENABLED)\s+([\s\S]*)/igm).exec(msg.replace(/\n/igm, '\\n'));
-			if(arr?.length >= 4 && arr[1] && arr[2] && arr[3]){
-				const type        = arr[2]?.toUpperCase().trim();
-				let reasoner_mode = arr[1]?.toLowerCase() === 'true';
-				const value       = normalizeAISettingValue(type, arr[3]);
+				// Парсим командный текст по образцу
+				// MODE TYPE VALUE
+				const arr = (/^(true|false)\s+(SYSTEM_PROMPT|SUMMARY_PROMPT|TEST_SPAM_PROMPT|TEMPERATURE|MESSAGE_LIMIT|USER_MEMORY_ENABLED|USER_CHARACTERISTICS_ENABLED)\s+([\s\S]*)/igm).exec(msg.replace(/\n/igm, '\\n'));
+				if(arr?.length >= 4 && arr[1] && arr[2] && arr[3]){
+					const type        = arr[2]?.toUpperCase().trim();
+					let reasoner_mode = arr[1]?.toLowerCase() === 'true';
+					const value       = normalizeAISettingValue(type, arr[3]);
 
-				if(!AI_SETTINGS_TYPES.has(type) || value == null || value === ''){
+					if(!AI_SETTINGS_TYPES.has(type) || value == null || value === ''){
+						return telegram.sendAutoRemoveMsg(ctx, getSetAISettingsUsage(), true);
+					}
+
+					if(AI_MEMORY_SETTINGS_TYPES.has(type)){
+						reasoner_mode = false;
+					}
+
+					try{
+						await telegram_db.setChatAISettings(ctx, deepseek.AI_ID, reasoner_mode, type, value);
+						return telegram.sendAutoRemoveMsg(ctx, 'Параметр сохранён.');
+
+					}catch(err){
+						logger.err(err).then();
+						return telegram.sendAutoRemoveMsg(ctx, 'Ошибка при сохранении параметра.\nПроверьте логи на сервере для подробностей');
+					}
+
+				}else{
 					return telegram.sendAutoRemoveMsg(ctx, getSetAISettingsUsage(), true);
 				}
-
-				if(AI_MEMORY_SETTINGS_TYPES.has(type)){
-					reasoner_mode = false;
-				}
-
-				try{
-					await telegram_db.setChatAISettings(ctx, deepseek.AI_ID, reasoner_mode, type, value);
-					return telegram.sendAutoRemoveMsg(ctx, 'Параметр сохранён.');
-
-				}catch(err){
-					logger.err(err).then();
-					return telegram.sendAutoRemoveMsg(ctx, 'Ошибка при сохранении параметра.\nПроверьте логи на сервере для подробностей');
-				}
-
-			}else{
-				return telegram.sendAutoRemoveMsg(ctx, getSetAISettingsUsage(), true);
 			}
-		}
 
-		// telegram.deleteMessage(ctx).then(); // Удаляем команду
-	});
+			// telegram.deleteMessage(ctx).then(); // Удаляем команду
+		});
+	}
 }
