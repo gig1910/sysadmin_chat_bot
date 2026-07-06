@@ -32,6 +32,29 @@ const AI_BOOLEAN_SETTINGS_TYPES = new Set([
 ]);
 
 /**
+ * Гарантирует наличие базовых записей чата/пользователя перед работой с AI2CHAT_SETTINGS.
+ * Особенно важно для первой команды в private-чате.
+ * @param {CTX} ctx
+ * @returns {Promise<Boolean>}
+ */
+async function ensureAISettingsContext(ctx){
+	const chat = telegram.getChatFromCtx(ctx);
+	const user = telegram.getUserFromCtx(ctx);
+	if(!chat?.id){
+		logger.warn('Не удалось определить чат для AI-настроек.').then();
+		return false;
+	}
+
+	const tasks = [telegram_db.addChat2DB(chat)];
+	if(user?.id){
+		tasks.push(telegram_db.addUser2DB(user));
+	}
+
+	await Promise.all(tasks).catch(err => logger.err(err).then());
+	return true;
+}
+
+/**
  * Проверка доступа к управлению AI-настройками текущего чата.
  * В private-чате admin-check не требуется, в группе требуется админ.
  * @param {CTX} ctx
@@ -40,6 +63,10 @@ const AI_BOOLEAN_SETTINGS_TYPES = new Set([
  */
 async function requireAISettingsAccess(ctx, command){
 	const chat = telegram.getChatFromCtx(ctx);
+	if(!await ensureAISettingsContext(ctx)){
+		return false;
+	}
+
 	if(chat?.type === 'private'){
 		return true;
 	}
