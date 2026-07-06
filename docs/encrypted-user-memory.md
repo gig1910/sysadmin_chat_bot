@@ -1,6 +1,6 @@
 # Encrypted user memory and characteristics
 
-Feature branch: `futures/encrypted-user-memory`.
+Feature branch: `feature/encrypted-user-memory`.
 
 ## Scope
 
